@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AgroVani Yield % Predictor</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <main class="shell">
+    <section class="intro">
+      <p class="eyebrow">AgroVani ML workspace</p>
+      <h1>Yield percentage calculator</h1>
+      <p>Submit the same field signals used by the trained Random Forest model and receive a bounded yield estimate for the crop cycle.</p>
+      <div class="status {{ 'ready' if model_loaded else 'fallback' }}">
+        <span></span>
+        {% if model_loaded %}Random Forest artifact loaded{% else %}Model artifact pending; fallback preview enabled{% endif %}
+      </div>
+      {% if model_error %}<p class="notice">{{ model_error }}</p>{% endif %}
+    </section>
+
+    <section class="panel">
+      <form action="/predict" method="post">
+        <div class="grid">
+          <label>Soil pH<input name="soil_pH" type="number" min="0" max="14" step="0.1" required placeholder="6.5"></label>
+          <label>Nitrogen (ppm)<input name="nitrogen_ppm" type="number" min="0" step="0.1" required placeholder="120"></label>
+          <label>Seasonal rainfall (mm)<input name="seasonal_rainfall_mm" type="number" min="0" step="0.1" required placeholder="800"></label>
+          <label>Average temperature (°C)<input name="avg_temp_c" type="number" step="0.1" required placeholder="25"></label>
+          <label>Peak NDVI (0–1)<input name="ndvi_peak" type="number" min="0" max="1" step="0.01" required placeholder="0.72"></label>
+        </div>
+        <button type="submit">Calculate yield %</button>
+      </form>
+
+      {% if result %}
+      <div class="result">
+        <p class="eyebrow">Prediction complete</p>
+        <strong>{{ result.predicted_yield_percent }}%</strong>
+        <span>Source: {{ result.source.replace('_', ' ') }}</span>
+      </div>
+      {% endif %}
+      {% if error %}<p class="error">{{ error }}</p>{% endif %}
+    </section>
+  </main>
+</body>
+</html>

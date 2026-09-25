@@ -1,0 +1,11 @@
+.env
+.env.*
+!.env.example
+.git
+.gitignore
+.next
+out
+node_modules
+npm-debug.log*
+*.pem
+model/*.joblib

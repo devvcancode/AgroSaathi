@@ -1,0 +1,18 @@
+{
+    "compilerOptions": {
+      "baseUrl": ".",
+      "ignoreDeprecations": "6.0",
+      "paths": {
+        "@/*": ["./*"],
+        "@/components/*": ["./src/components/*"],
+        "@/hooks/*": ["./src/hooks/*"],
+        "@/lib/*": ["./src/lib/*"],
+        "@/app/*": ["./app/*"],
+        "@/backend/*": ["../backend/src/*"],
+        "@/contracts/*": ["../contracts/src/*"],
+        "@/science/*": ["../science/src/*"],
+        "@/shared/*": ["../shared/*"]
+      }
+    },
+    "exclude": ["node_modules", ".next"]
+  }
