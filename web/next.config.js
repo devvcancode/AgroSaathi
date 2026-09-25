@@ -11,7 +11,7 @@ const withPWA = require('@ducanh2912/next-pwa').default({
 });
 
 const nextConfig = {
-  output: process.env.GITHUB_PAGES === 'true' ? 'export' : 'standalone',
+  output: process.env.GITHUB_PAGES === 'true' ? 'export' : undefined,
   basePath: process.env.NEXT_PUBLIC_BASE_PATH || '',
   assetPrefix: process.env.NEXT_PUBLIC_BASE_PATH ? `${process.env.NEXT_PUBLIC_BASE_PATH}/` : undefined,
   reactStrictMode: false,

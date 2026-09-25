@@ -40,7 +40,7 @@ gcloud run deploy agrosaathi-product-web \
 	--set-secrets NEXTAUTH_SECRET=NEXTAUTH_SECRET:latest,DATABASE_URL=DATABASE_URL:latest
 ```
 
-Cloud Run supplies `PORT` to the container. The standalone server and `/api/health` endpoint are already configured for that runtime. Store Google OAuth credentials and other secrets in Secret Manager, not in the image or repository.
+Cloud Run supplies `PORT` to the container. The container runs the standard Next server and exposes `/api/health` for runtime checks. Store Google OAuth credentials and other secrets in Secret Manager, not in the image or repository.
 
 Run the production migration from a deploy shell or CI job before serving traffic:
 
