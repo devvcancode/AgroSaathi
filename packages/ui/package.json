@@ -1,0 +1,9 @@
+{
+  "name": "@agrosaathi/ui",
+  "version": "0.1.0",
+  "private": true,
+  "main": "src/index.js",
+  "scripts": {
+    "lint": "echo 'No lint configured'"
+  }
+}

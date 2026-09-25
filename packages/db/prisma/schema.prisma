@@ -1,0 +1,160 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  FARMER
+  BUYER
+  SELLER
+}
+
+model User {
+  id            String          @id @default(cuid())
+  email         String?         @unique
+  name          String?
+  image         String?
+  role          Role
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  farmerProfile FarmerProfile?
+  buyerProfile  BuyerProfile?
+  sellerProfile SellerProfile?
+  orders        Order[]
+  listings      Listing[]
+  notifications Notification[]
+}
+
+model FarmerProfile {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id])
+  kisaanId      String   @unique
+  mobile        String
+  state         String
+  district      String
+  landRecords   String?
+  verifiedAt    DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model BuyerProfile {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id])
+  companyId     String   @unique
+  organization  String?
+  country       String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model SellerProfile {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id])
+  businessName  String?
+  warehouse     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model Product {
+  id          String   @id @default(cuid())
+  name        String
+  sku         String   @unique
+  description String?
+  price       Float
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  listings    Listing[]
+}
+
+model Listing {
+  id          String   @id @default(cuid())
+  sellerId    String
+  seller      User     @relation(fields: [sellerId], references: [id])
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id])
+  quantity    Int
+  unit        String
+  price       Float
+  status      String   @default("ACTIVE")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Order {
+  id          String   @id @default(cuid())
+  buyerId     String
+  buyer       User     @relation(fields: [buyerId], references: [id])
+  listingId   String?
+  total       Float
+  status      String   @default("PENDING")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  notifications Notification[]
+  dispatch      DriverAssignment?
+}
+
+model BuyerNeed {
+  id          String   @id @default(cuid())
+  buyerId     String
+  cropType    String
+  residueType String
+  quantity    Float
+  region      String?
+  urgency     String?
+  useCase     String?
+  notes       String?
+  status      String   @default("OPEN")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([buyerId, status])
+  @@index([cropType, region, status])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  audience  String
+  farmId    String?
+  type      String
+  title     String
+  message   String
+  data      Json?
+  readAt    DateTime?
+  createdAt DateTime @default(now())
+
+  orderId   String?
+  order     Order?   @relation(fields: [orderId], references: [id])
+
+  @@index([audience, readAt, createdAt])
+  @@index([farmId, readAt, createdAt])
+  @@index([userId, readAt, createdAt])
+}
+
+model DriverAssignment {
+  id              String   @id @default(cuid())
+  orderId         String   @unique
+  order           Order    @relation(fields: [orderId], references: [id])
+  driverId        String?
+  status          String   @default("PENDING")
+  distanceKm      Float?
+  loadTons        Float?
+  payoutInr       Float?
+  etaMinutes      Int?
+  assignedAt      DateTime?
+  completedAt     DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([driverId, status])
+}

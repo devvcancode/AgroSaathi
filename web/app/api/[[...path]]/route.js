@@ -17,6 +17,9 @@ import { plans } from '@/lib/data/plans'
 import { farmCreateSchema, listingCreateSchema, orderCreateSchema, validationError } from '@/contracts/api'
 import { buildResidueOperations, generateResiduePlan } from '@/backend/services/residueService'
 import { residuePlanSchema } from '@/contracts/api'
+import marketplaceService from '@/backend/services/marketplaceService'
+
+const { getLiveAvailability, findMatchingFarmers } = marketplaceService
 
 function handleCORS(response) {
   response.headers.set('Access-Control-Allow-Origin', process.env.CORS_ORIGINS || process.env.NEXT_PUBLIC_BASE_URL || '*')
@@ -337,6 +340,16 @@ async function handleRoute(request, { params }) {
   const { searchParams } = new URL(request.url)
 
   try {
+    if (route === '/health' && method === 'GET') {
+      return ok({
+        status: 'ok',
+        service: 'agrosaathi-product-web',
+        timestamp: new Date().toISOString(),
+        database: process.env.DATABASE_URL ? 'configured' : 'legacy-adapter',
+        yieldModel: process.env.YIELD_MODEL_API_URL ? 'configured' : 'optional',
+      })
+    }
+
     if (route === '/livekit/token' && method === 'POST') {
       if (!process.env.LIVEKIT_API_KEY || !process.env.LIVEKIT_API_SECRET || !process.env.LIVEKIT_URL) {
         return ok({ error: 'LiveKit is not configured. Add LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET.' }, 503)
@@ -612,7 +625,36 @@ async function handleRoute(request, { params }) {
         createdAt: new Date(),
       }
       await db.collection('buyer_needs').insertOne(need)
+      const matchingFarms = await db.collection('farms').find({ cropType: String(body.cropType).trim() }).limit(25).toArray()
+      const farmerAlerts = matchingFarms.map((farm) => ({
+        id: uuidv4(),
+        audience: 'farmer',
+        type: 'buyer_demand',
+        title: 'Buyer demand match',
+        message: `${body.buyerId || 'A buyer'} needs ${Number(body.quantity)} tons of ${body.residueType} for ${body.cropType} in ${body.region || 'your region'}.`,
+        farmId: farm.id,
+        read: false,
+        createdAt: new Date(),
+      }))
+      if (farmerAlerts.length) {
+        await db.collection('notifications').insertMany(farmerAlerts)
+      }
       return ok(need, 201)
+    }
+
+    if (route === '/marketplace/availability' && method === 'GET') {
+      const cropType = searchParams.get('cropType') || ''
+      const region = searchParams.get('region') || ''
+      const farms = await db.collection('farms').find({}).limit(250).toArray()
+      const mandi = lookupMandiPrices({ commodity: cropType || 'Rice', state: region || 'Punjab', market: '' })
+      const availability = getLiveAvailability({ cropType, region, farms })
+      const matches = findMatchingFarmers({ cropType, region, farms, mandiPrice: mandi.latestModalPrice || 0 })
+      return ok({
+        ...availability,
+        mandiPricePerQtl: mandi.latestModalPrice || null,
+        mandiSource: mandi.source || null,
+        matchingFarmers: matches,
+      })
     }
 
     if (route === '/buyer/sellers' && method === 'GET') {
@@ -726,8 +768,13 @@ async function handleRoute(request, { params }) {
 
     if (route === '/notifications' && method === 'GET') {
       const audience = searchParams.get('audience') || 'farmer'
-      const notifications = await db.collection('notifications').find({ audience }).sort({ createdAt: -1 }).limit(100).toArray()
-      return ok(notifications)
+      const farmId = searchParams.get('farmId')
+      const userId = searchParams.get('userId')
+      const query = { audience }
+      if (farmId) query.farmId = farmId
+      if (userId) query.userId = userId
+      const notifications = await db.collection('notifications').find(query).sort({ createdAt: -1 }).limit(100).toArray()
+      return ok(notifications.map((notification) => ({ ...notification, unread: !notification.readAt && notification.read !== true })))
     }
 
     if (route === '/notifications' && method === 'PATCH') {
@@ -735,6 +782,7 @@ async function handleRoute(request, { params }) {
       const notification = await db.collection('notifications').findOne({ id: body.id })
       if (!notification) return ok({ error: 'Notification not found' }, 404)
       notification.read = true
+      notification.readAt = new Date()
       await db.collection('notifications').updateOne({ id: notification.id }, { $set: notification })
       return ok(notification)
     }

@@ -1,4 +1,4 @@
-import { MANDI_PRICES, MANDI_SOURCE, MSP_DATA } from '../../data/mandiDemo'
+import { MANDI_PRICES, MANDI_SOURCE, MSP_DATA } from '../../data/mandiDemo.js'
 import { ageHours, freshness, numberOrNull } from '../../../shared/advisory.js'
 
 function latest(rows) {

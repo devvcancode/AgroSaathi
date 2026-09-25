@@ -25,8 +25,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
-      - run: npm ci
+          cache: pnpm
+      - name: Enable pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.3
+          run_install: false
+      - run: pnpm install --frozen-lockfile
       - name: Build static frontend for GitHub Pages
         env:
           GITHUB_PAGES: 'true'
@@ -35,7 +40,7 @@ jobs:
           NEXT_PUBLIC_LOCATION_WS_URL: ${{ vars.NEXT_PUBLIC_LOCATION_WS_URL }}
           NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
-        run: npm run build:github-pages
+        run: pnpm run build:github-pages
       - uses: actions/upload-pages-artifact@v3
         with:
           path: web/out

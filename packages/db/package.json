@@ -1,0 +1,16 @@
+{
+  "name": "@agrosaathi/db",
+  "version": "0.1.0",
+  "private": true,
+  "main": "src/index.js",
+  "scripts": {
+    "db:generate": "prisma generate --schema=prisma/schema.prisma",
+    "db:push": "prisma db push --schema=prisma/schema.prisma",
+    "db:migrate": "prisma migrate dev --schema=prisma/schema.prisma --name init",
+    "db:migrate:deploy": "prisma migrate deploy --schema=prisma/schema.prisma"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.17.0",
+    "prisma": "^5.17.0"
+  }
+}

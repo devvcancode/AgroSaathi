@@ -29,6 +29,7 @@ export default function BuyerDashboard() {
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
+  const [availability, setAvailability] = useState({ totalFarmers: 0, available: false, matchingFarmers: [] })
 
   const buyerId = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('agrovani_user') || '{}').email || 'buyer@agrovani.in' : 'buyer@agrovani.in'
   const cropCounts = useMemo(() => crops.reduce((counts, crop) => ({ ...counts, [crop]: farms.filter((farm) => farm.cropType === crop).length }), {}), [farms])
@@ -39,8 +40,9 @@ export default function BuyerDashboard() {
       fetch(`/api/buyer/needs?buyerId=${encodeURIComponent(buyerId)}`).then(async (response) => { const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Unable to load buyer needs'); return data }),
       fetch('/api/buyer/sellers').then(async (response) => { const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Unable to load seller offers'); return data }),
       fetch(`/api/marketplace/orders?buyerId=${encodeURIComponent(buyerId)}`).then(async (response) => { const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Unable to load buyer orders'); return data }),
+      fetch(`/api/marketplace/availability?cropType=${encodeURIComponent(form.cropType || 'Rice')}&region=${encodeURIComponent(form.region || 'Punjab')}`).then(async (response) => { const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Unable to load live availability'); return data }),
     ])
-      .then(([farmData, needData, sellerData, orderData]) => {
+      .then(([farmData, needData, sellerData, orderData, availabilityData]) => {
         const uniqueFarms = [...new Map(farmData.map((farm) => [farm.id, farm])).values()]
         const uniqueSellers = [...new Map(sellerData.map((seller) => [seller.id, seller])).values()]
         const uniqueOrders = [...new Map(orderData.map((order) => [order.id, order])).values()]
@@ -48,11 +50,23 @@ export default function BuyerDashboard() {
         setNeeds(needData)
         setSellers(uniqueSellers)
         setOrders(uniqueOrders)
+        setAvailability(availabilityData || { totalFarmers: 0, available: false, matchingFarmers: [] })
         setSelectedListing(uniqueSellers[0]?.id || '')
       })
       .catch((loadError) => setError(loadError.message))
       .finally(() => setLoading(false))
-  }, [buyerId])
+  }, [buyerId, form.cropType, form.region])
+
+  useEffect(() => {
+    if (!buyerId || !form.cropType) return
+    fetch(`/api/marketplace/availability?cropType=${encodeURIComponent(form.cropType)}&region=${encodeURIComponent(form.region)}`)
+      .then(async (response) => {
+        const data = await response.json()
+        if (!response.ok) throw new Error(data.error || 'Unable to fetch live availability')
+        setAvailability(data || { totalFarmers: 0, available: false, matchingFarmers: [] })
+      })
+      .catch((loadError) => setError(loadError.message))
+  }, [buyerId, form.cropType, form.region])
 
   function setField(field) {
     return (event) => setForm((current) => ({ ...current, [field]: event.target.value }))
@@ -123,6 +137,17 @@ export default function BuyerDashboard() {
               <div className="grid gap-4 sm:grid-cols-2"><label className="block text-sm font-semibold">Use case<select value={form.useCase} onChange={setField('useCase')} className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-3"><option>Biomass processing</option><option>Compost and soil inputs</option><option>Animal feed</option><option>Bioenergy</option></select></label><label className="block text-sm font-semibold">Timing<select value={form.urgency} onChange={setField('urgency')} className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-3"><option>This week</option><option>This month</option><option>Next season</option></select></label></div>
               <label className="block text-sm font-semibold">Note for farmer network<textarea value={form.notes} onChange={setField('notes')} className="mt-2 min-h-24 w-full rounded-xl border border-slate-300 bg-white px-3 py-3" placeholder="Quality, pickup, or processing requirements" /></label>
               <button type="submit" disabled={saving} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#10252a] px-4 py-3 font-semibold text-white transition hover:bg-[#1c3c40] disabled:opacity-60"><Send className="h-4 w-4" />{saving ? 'Publishing…' : 'Publish buyer need'}</button>
+              <div className="rounded-2xl border border-slate-300 bg-slate-100 p-3 text-sm text-slate-700">
+                <p className="font-semibold text-slate-800">Live availability</p>
+                <p className="mt-1">{availability.available ? `${availability.totalFarmers} matching farmers ready for ${form.cropType}` : `No live ${form.cropType} supply available in ${form.region || 'the selected region'}`}</p>
+                {availability.matchingFarmers?.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {availability.matchingFarmers.slice(0, 3).map((farmer) => (
+                      <span key={farmer.id} className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-700">{farmer.name} · ₹{farmer.quotePerTon || 0}/ton</span>
+                    ))}
+                  </div>
+                )}
+              </div>
             </form>
           </section>
 

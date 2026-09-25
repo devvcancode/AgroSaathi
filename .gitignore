@@ -3,6 +3,8 @@
 # IDE and editors
 .idea/
 .vscode/
+!.vscode/
+!.vscode/settings.json
 
 # Dependencies
 node_modules/
@@ -22,6 +24,7 @@ node_modules/
 # Next.js
 /.next/
 /web/.next/
+/apps/*/.next/
 /out/
 /web/out/
 next-env.d.ts
@@ -78,6 +81,8 @@ agenthub/agents/youtube/db
 
 # Build caches
 .cache/
+**/.turbo/
+web/public/workbox-*.js
 
 memory/test_credentials.md
 

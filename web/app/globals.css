@@ -118,6 +118,32 @@
   .page-home { background-color: #081815; }
   .page-onboarding { background: linear-gradient(145deg, #fffdf7 0%, #f7f5ec 58%, #f0f5df 100%); }
   .page-farmer { background: radial-gradient(circle at 90% 0%, rgba(14, 165, 233, 0.14), transparent 28%), linear-gradient(145deg, #071918, #0c1b29 65%, #142c25); }
+
+  .page-farmer .glass-card,
+  .page-farmer .glass-panel {
+    color: #e2e8f0;
+  }
+
+  .page-farmer .text-slate-600,
+  .page-farmer .text-slate-500,
+  .page-farmer .text-slate-700,
+  .page-farmer .text-slate-900,
+  .page-farmer .text-slate-800 {
+    color: #e2e8f0 !important;
+  }
+
+  .page-farmer [class*="bg-white/"],
+  .page-farmer .bg-slate-50,
+  .page-farmer .bg-white {
+    background: rgba(15, 23, 42, 0.7) !important;
+    border-color: rgba(148, 163, 184, 0.25) !important;
+  }
+
+  .page-farmer .border-slate-200,
+  .page-farmer [class*="border-white/"],
+  .page-farmer .border-slate-100 {
+    border-color: rgba(148, 163, 184, 0.28) !important;
+  }
   .page-seller { background: radial-gradient(circle at 90% 0%, rgba(245, 158, 11, 0.14), transparent 28%), linear-gradient(145deg, #1b160e, #111d28 70%); }
   .page-admin { background: radial-gradient(circle at 90% 0%, rgba(59, 130, 246, 0.2), transparent 28%), linear-gradient(145deg, #172a3b, #202632 70%); }
   .language-switcher { @apply inline-flex items-center gap-1 rounded-full border border-white/20 bg-white/10 p-1.5 shadow-lg backdrop-blur-xl; }

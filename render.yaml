@@ -1,0 +1,42 @@
+services:
+  - type: web
+    name: agrosaathi-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile.product
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: agrosaathi-postgres
+          property: connectionString
+      - key: NEXTAUTH_SECRET
+        generateValue: true
+      - key: NEXTAUTH_URL
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: YIELD_MODEL_API_URL
+        sync: false
+
+  - type: web
+    name: agrosaathi-yield-model
+    runtime: python
+    rootDir: services/yield-model
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn --bind 0.0.0.0:$PORT app:app
+    healthCheckPath: /
+
+  - type: redis
+    name: agrosaathi-redis
+    plan: free
+    ipAllowList: []
+
+databases:
+  - name: agrosaathi-postgres
+    plan: free
+    databaseName: agrosaathi
+    user: agrosaathi

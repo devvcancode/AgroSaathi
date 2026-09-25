@@ -1,0 +1,14 @@
+{
+  "name": "@agrosaathi/auth",
+  "version": "0.1.0",
+  "private": true,
+  "main": "src/index.js",
+  "scripts": {
+    "lint": "echo 'No lint configured'"
+  },
+  "dependencies": {
+    "jose": "^5.5.0",
+    "jsonwebtoken": "^9.0.2",
+    "next-auth": "^4.24.7"
+  }
+}
