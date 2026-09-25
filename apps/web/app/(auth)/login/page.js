@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -82,6 +83,9 @@ export default function LoginPage() {
 
   return (
     <main style={{ maxWidth: 420, margin: '64px auto', padding: 24 }}>
+      <Link href="/" style={{ display: 'inline-block', marginBottom: 20, color: '#0f766e', fontWeight: 600, textDecoration: 'none' }}>
+        ← Back to main page
+      </Link>
       <h1>Farmer login</h1>
       <p style={{ color: '#4b5563' }}>Verify Govt Kisaan ID and mobile before final OTP login.</p>
 
