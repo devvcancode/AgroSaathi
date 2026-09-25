@@ -14,6 +14,9 @@ Required environment variables:
 - `YIELD_MODEL_API_URL` pointing to the Render yield-model service when enabled
 - `CORS_ORIGINS` set to the Vercel origin
 - `NEXT_PUBLIC_BASE_URL` set to the Vercel origin
+- `GEMINI_API_KEY` for live voice, image diagnosis, and model-backed multilingual translation
+- `GEMINI_MODEL` optionally pins the Gemini model used for translation and assistant responses
+- `TRANSLATION_API_URL` and `TRANSLATION_API_KEY` optionally point to an internal translation endpoint accepting `{ text, sourceLanguage, targetLanguage }` and returning `translatedText`
 
 Use [.env.example](../.env.example) as the variable checklist only. Add values in Vercel Project Settings, and set `DISABLE_PWA=true` for deterministic serverless builds. Never commit a populated `.env` file.
 
@@ -23,6 +26,17 @@ Set these Google OAuth redirect URIs in Google Cloud Console:
 - `http://localhost:3000/api/auth/callback/google`
 
 Google OAuth is disabled when credentials are absent; fake client credentials are never used.
+
+After deployment, verify the public app and API from a shell:
+
+```sh
+curl -fsS https://YOUR_VERCEL_DOMAIN/api/health
+curl -fsS -X POST https://YOUR_VERCEL_DOMAIN/api/translate \
+	-H 'Content-Type: application/json' \
+	-d '{"text":"30 kg rice today","sourceLanguage":"en","targetLanguage":"hi"}'
+```
+
+The health check must return `status: "ok"`. The translation check must return a non-empty `translatedText` and `mode: "gemini"` or `mode: "provider"` in production. `mode: "fallback"` means no live translation model is configured.
 
 ## Render
 

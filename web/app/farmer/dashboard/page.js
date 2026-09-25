@@ -7,6 +7,8 @@ import FarmMapCard from '@/components/farmer/FarmMapCard'
 import WeatherMapCard from '@/components/farmer/WeatherMapCard'
 import BookMachineryCard from '@/components/farmer/BookMachineryCard'
 import LiveKitVoiceAgent from '@/components/farmer/LiveKitVoiceAgent'
+import MultilingualVoiceBridge from '@/components/farmer/MultilingualVoiceBridge'
+import AgenticSearchPanel from '@/components/farmer/AgenticSearchPanel'
 import RazorpayButton from '@/components/RazorpayButton'
 import ResiduePanel from '@/components/farmer/ResiduePanel'
 import LanguageSwitcher from '@/components/LanguageSwitcher'
@@ -1042,6 +1044,14 @@ export default function App() {
                   <div className="flex items-center gap-2 text-slate-900"><Mic className="h-5 w-5 text-emerald-600" /><h3 className="text-xl font-semibold">Live Voice Advisory</h3></div>
                   <p className="mt-2 text-sm text-slate-600">Talk naturally with the Gemini Live agent in Punjabi, Hindi, Marathi, Tamil, Telugu, or English.</p>
                   <LiveKitVoiceAgent farmId={farm?.id} locale={locale} context={stress || residue || { farm: farm?.cropType || 'Rice' }} />
+                </div>
+
+                <div className="glass-card">
+                  <MultilingualVoiceBridge farm={farm} context={stress || residue || { farm: farm?.cropType || 'Rice' }} />
+                </div>
+
+                <div className="glass-card">
+                  <AgenticSearchPanel farm={farm} context={stress || residue || { farm: farm?.cropType || 'Rice' }} />
                 </div>
 
                 <div className="glass-card">

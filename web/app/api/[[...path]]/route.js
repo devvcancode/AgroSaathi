@@ -18,8 +18,10 @@ import { farmCreateSchema, listingCreateSchema, orderCreateSchema, validationErr
 import { buildResidueOperations, generateResiduePlan } from '@/backend/services/residueService'
 import { residuePlanSchema } from '@/contracts/api'
 import marketplaceService from '@/backend/services/marketplaceService'
+import translationService from '@/backend/services/translationService'
 
 const { getLiveAvailability, findMatchingFarmers } = marketplaceService
+const { normalizeLanguage, translateTextForFarmer, buildAgenticSearchPlan } = translationService
 
 function handleCORS(response) {
   response.headers.set('Access-Control-Allow-Origin', process.env.CORS_ORIGINS || process.env.NEXT_PUBLIC_BASE_URL || '*')
@@ -244,9 +246,14 @@ async function createGeminiAudioReply(db, body) {
   const farmContext = farm
     ? `Farmer: ${farm.name}. Location: ${farm.village}, ${farm.district}, ${farm.state}. Crop: ${farm.cropType}. Area: ${farm.areaInAcres} acres. Soil pH: ${farm.soilPh ?? 'unknown'}. Nitrogen: ${farm.nitrogenKgPerHa ?? 'unknown'} kg/ha.`
     : 'No farm profile is available yet.'
-  const language = body.locale === 'hi' ? 'Hindi' : body.locale === 'pa' ? 'Punjabi' : 'English'
+  const sourceLanguage = normalizeLanguage(body.sourceLanguage || body.locale || 'ta')
+  const targetLanguage = normalizeLanguage(body.targetLanguage || body.locale || 'hi')
+  const sourceName = { en: 'English', hi: 'Hindi', pa: 'Punjabi', ta: 'Tamil', te: 'Telugu', mr: 'Marathi' }[sourceLanguage] || 'the source language'
+  const targetName = { en: 'English', hi: 'Hindi', pa: 'Punjabi', ta: 'Tamil', te: 'Telugu', mr: 'Marathi' }[targetLanguage] || 'the farmer language'
+  const language = body.locale === 'hi' ? 'Hindi' : body.locale === 'pa' ? 'Punjabi' : body.locale === 'ta' ? 'Tamil' : body.locale === 'te' ? 'Telugu' : 'English'
   const instruction = [
     'You are AgroVani, a concise and practical agricultural voice advisor for Indian farmers.',
+    `This audio comes from a buyer speaking ${sourceName}. Translate and decode it into ${targetName} for the farmer. Keep the business meaning, price, quantity, urgency, and crop details intact.`,
     `Understand the recorded farmer question and answer in ${language}, or in the language spoken by the farmer.`,
     'Return only the spoken answer as plain text, with short sentences and no markdown.',
     'Never invent weather, disease diagnoses, pesticide doses, or prices. Recommend a local agronomist for high-risk chemical questions.',
@@ -272,7 +279,7 @@ async function createGeminiAudioReply(db, body) {
     return ok({ error: 'Gemini could not understand the recording. Please try again.' }, 502)
   }
   const reply = data.candidates?.[0]?.content?.parts?.map((part) => part.text || '').join('').trim()
-  return reply ? ok({ reply }) : ok({ error: 'Gemini returned an empty voice response' }, 502)
+  return reply ? ok({ reply, translatedText: reply, sourceLanguage, targetLanguage, mode: 'gemini' }) : ok({ error: 'Gemini returned an empty voice response' }, 502)
 }
 
 async function createGeminiVisionDiagnosis(body) {
@@ -330,6 +337,38 @@ async function createGeminiVisionDiagnosis(body) {
     category: parsed.category || mapped.category,
     confidence: Number(parsed.confidence ?? 0.7),
     dosageGuidance,
+  })
+}
+
+async function translateBuyerText(body = {}) {
+  const text = String(body?.text || '').trim()
+  if (!text) return ok({ error: 'Please provide a buyer message to translate.' }, 400)
+
+  const sourceLanguage = normalizeLanguage(body?.sourceLanguage || 'ta')
+  const targetLanguage = normalizeLanguage(body?.targetLanguage || 'hi')
+  const translation = await translateTextForFarmer({ text, sourceLanguage, targetLanguage })
+  return ok({
+    ...translation,
+    sourceLanguage,
+    targetLanguage,
+    translatedText: translation.translatedText,
+  })
+}
+
+async function buildFarmerSearchPlan(body = {}) {
+  const query = String(body?.query || '').trim()
+  if (!query) return ok({ error: 'Please enter a farmer search query.' }, 400)
+
+  const plan = buildAgenticSearchPlan(query, {
+    cropType: body?.cropType || 'Rice',
+    farmId: body?.farmId || null,
+    locale: body?.locale || 'hi',
+  })
+
+  return ok({
+    ...plan,
+    modules: plan.modules || [],
+    response: plan.response || 'Use the recommended field action for the next step.',
   })
 }
 
@@ -398,6 +437,14 @@ async function handleRoute(request, { params }) {
       const body = await request.json()
       if (!body.crop || Number(body.areaInAcres) <= 0) return ok({ error: 'crop and a positive areaInAcres are required' }, 400)
       return ok(predictYield(body))
+    }
+
+    if (route === '/translate' && method === 'POST') {
+      return translateBuyerText(await request.json())
+    }
+
+    if (route === '/agentic-search' && method === 'POST') {
+      return buildFarmerSearchPlan(await request.json())
     }
 
     if (route === '/report/whatsapp' && method === 'POST') {
