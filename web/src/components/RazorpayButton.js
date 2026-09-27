@@ -57,14 +57,18 @@ export default function RazorpayButton({ plan }) {
         prefill: { email: user?.email || '' },
         theme: { color: '#059669' },
         handler: async (payment) => {
-          const verifyResponse = await fetch('/api/payments/razorpay/verify', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ...payment, planId: plan.id }),
-          })
-          const result = await verifyResponse.json()
-          if (!verifyResponse.ok) throw new Error(result.error || 'Payment verification failed')
-          setStatus(`Payment successful. ${plan.name} is now active.`)
+          try {
+            const verifyResponse = await fetch('/api/payments/razorpay/verify', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ ...payment, planId: plan.id }),
+            })
+            const result = await verifyResponse.json()
+            if (!verifyResponse.ok) throw new Error(result.error || 'Payment verification failed')
+            setStatus(`Payment verified for ${plan.name}. Account activation is not available in this prototype.`)
+          } catch (error) {
+            setStatus(error.message || 'Payment verification failed. Contact support with your payment ID.')
+          }
         },
         modal: { ondismiss: () => setStatus('Payment cancelled.') },
       })

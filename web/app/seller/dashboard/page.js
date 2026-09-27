@@ -5,8 +5,6 @@ import { useEffect, useMemo, useState } from 'react'
 import { ArrowLeft, Store, TrendingUp, PackageCheck, Plus, Search, Truck, Check } from 'lucide-react'
 import LanguageSwitcher from '@/components/LanguageSwitcher'
 import { seedCatalog } from '@/lib/data/seedCatalog'
-import RazorpayButton from '@/components/RazorpayButton'
-import { plans } from '@/lib/data/plans'
 import { apiUrl } from '@/lib/api'
 import SupportDock from '@/components/SupportDock'
 
@@ -121,6 +119,7 @@ export default function SellerDashboard() {
           <Link href="/login" className="flex items-center gap-2 text-sm font-semibold text-slate-700 hover:text-slate-900">
             <ArrowLeft className="h-4 w-4" /> AgroVani Seller Portal
           </Link>
+          <Link href="/plans" className="text-sm font-semibold text-slate-700 underline underline-offset-4 hover:text-slate-950">Plans & billing</Link>
           <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Seller</span>
           <Link href="/verification" className="text-xs font-semibold text-slate-600 underline underline-offset-4">KYC requirements</Link>
           <LanguageSwitcher />
@@ -249,24 +248,6 @@ export default function SellerDashboard() {
           </div>
         </section>
 
-        <section className="mt-6 rounded-[28px] border border-white/80 bg-white/75 p-6 shadow-sm backdrop-blur-md">
-          <div className="mb-6">
-            <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-amber-600">Membership</p>
-            <h2 className="mt-2 text-3xl font-bold tracking-tight text-slate-900">Our Plans</h2>
-          </div>
-          <div className="grid gap-5 lg:grid-cols-3">
-            {plans.map((plan) => (
-              <div key={plan.id} className={`relative rounded-[24px] border p-5 ${plan.highlight ? 'border-amber-200 bg-amber-50 ring-2 ring-amber-100' : 'border-slate-200 bg-white'}`}>
-                {plan.highlight && <span className="absolute right-4 top-4 rounded-full bg-amber-600 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.2em] text-white">Best value</span>}
-                <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500">{plan.name}</p>
-                <p className="mt-4 text-3xl font-bold text-slate-900">{plan.priceInr === 0 ? '₹0' : `₹${plan.priceInr.toLocaleString('en-IN')}`}<span className="ml-2 text-sm font-medium text-slate-500">/mo</span></p>
-                <p className="mt-2 text-sm text-slate-600">{plan.note}</p>
-                <ul className="mt-5 space-y-2 text-sm text-slate-700">{plan.features.map((feature) => <li key={feature} className="flex items-center gap-3"><span className="h-2 w-2 rounded-full bg-amber-500" />{feature}</li>)}</ul>
-                <RazorpayButton plan={plan} />
-              </div>
-            ))}
-          </div>
-        </section>
       </div>
       <SupportDock role="seller" />
     </main>

@@ -9,13 +9,11 @@ import BookMachineryCard from '@/components/farmer/BookMachineryCard'
 import LiveKitVoiceAgent from '@/components/farmer/LiveKitVoiceAgent'
 import MultilingualVoiceBridge from '@/components/farmer/MultilingualVoiceBridge'
 import AgenticSearchPanel from '@/components/farmer/AgenticSearchPanel'
-import RazorpayButton from '@/components/RazorpayButton'
 import ResiduePanel from '@/components/farmer/ResiduePanel'
 import LanguageSwitcher from '@/components/LanguageSwitcher'
 import InstallAppButton from '@/components/InstallAppButton'
 import { useLanguage } from '@/lib/i18n/LanguageContext'
 import { getRecommendationCopy } from '@/lib/i18n/recommendation'
-import { plans } from '@/lib/data/plans'
 import { apiUrl } from '@/lib/api'
 import SupportDock from '@/components/SupportDock'
 import {
@@ -1171,25 +1169,6 @@ export default function App() {
               <FarmMapCard lat={farm?.latitude} lon={farm?.longitude} mode="crop" stressScore={Math.max(diag?.scores?.diurnal || 0, diag?.scores?.night || 0)} title="Live Crop Position Tracking" />
             </div>
           )}
-
-          <section className="mt-8 rounded-[28px] border border-white/80 bg-white/75 p-6 shadow-sm backdrop-blur-md">
-            <div className="mb-6">
-              <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-emerald-600">Membership</p>
-              <h2 className="mt-2 text-3xl font-bold tracking-tight text-slate-900">Our Plans</h2>
-            </div>
-            <div className="grid gap-5 lg:grid-cols-3">
-              {plans.map((plan) => (
-                <div key={plan.id} className={`relative rounded-[24px] border p-5 ${plan.highlight ? 'border-emerald-200 bg-emerald-50 ring-2 ring-emerald-100' : 'border-slate-200 bg-white'}`}>
-                  {plan.highlight && <span className="absolute right-4 top-4 rounded-full bg-emerald-600 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.2em] text-white">Best value</span>}
-                  <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500">{plan.name}</p>
-                  <p className="mt-4 text-3xl font-bold text-slate-900">₹{(plan.farmerPriceInr ?? 0).toLocaleString('en-IN')}<span className="ml-2 text-sm font-medium text-slate-500">/mo</span></p>
-                  <p className="mt-2 text-sm text-slate-600">{plan.note}</p>
-                  <ul className="mt-5 space-y-2 text-sm text-slate-700">{plan.features.map((feature) => <li key={feature} className="flex items-center gap-3"><span className="h-2 w-2 rounded-full bg-emerald-500" />{feature}</li>)}</ul>
-                  <RazorpayButton plan={{ ...plan, priceInr: plan.farmerPriceInr ?? 0 }} />
-                </div>
-              ))}
-            </div>
-          </section>
 
           {orderReceipt && (
             <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="order-receipt-title">

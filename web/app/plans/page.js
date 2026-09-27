@@ -2,16 +2,27 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Check } from 'lucide-react'
-import { plans } from '@/src/lib/data/plans'
+import { ArrowLeft, BadgeCheck, Check, CreditCard, Sprout } from 'lucide-react'
+import RazorpayButton from '@/components/RazorpayButton'
+import { plans } from '@/lib/data/plans'
 
 const priceFormatter = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 })
 
-const statCards = [
-  { label: 'Stations', value: '11', tone: 'light' },
-  { label: 'Warmest', value: '34°C', tone: 'mint' },
-  { label: 'Coverage', value: 'India only', tone: 'light' },
-]
+const roleLabels = {
+  farmer: 'Farmer',
+  buyer: 'Buyer',
+  seller: 'Seller',
+  driver: 'Driver',
+  admin: 'Administrator',
+}
+
+const dashboardPaths = {
+  farmer: '/farmer/dashboard',
+  buyer: '/buyer/dashboard',
+  seller: '/seller/dashboard',
+  driver: '/driver/dashboard',
+  admin: '/admin/dashboard',
+}
 
 export default function PlansPage() {
   const [role, setRole] = useState('farmer')
@@ -24,113 +35,95 @@ export default function PlansPage() {
     }
   }, [])
 
+  const isFarmer = role === 'farmer'
+  const roleLabel = roleLabels[role] || 'Account'
+  const dashboardPath = dashboardPaths[role] || '/login'
+  const includedPlan = isFarmer ? plans.find((plan) => plan.farmerPriceInr === 0) : null
+
   return (
-    <main className="min-h-screen bg-[#081d2d] px-4 py-4 text-white md:px-6 md:py-6">
-      <div className="mx-auto max-w-[1500px]">
-        <div className="mb-6 flex items-center justify-between gap-4">
-          <Link href="/login" className="inline-flex items-center gap-2 text-sm font-semibold text-slate-200 transition hover:text-white">
-            <ArrowLeft className="h-4 w-4" /> Back to login
+    <main className="min-h-screen bg-[#0b171c] px-4 py-5 text-slate-100 md:px-8 md:py-8">
+      <div className="mx-auto max-w-6xl">
+        <header className="flex flex-wrap items-center justify-between gap-4 border-b border-white/10 pb-5">
+          <Link href={dashboardPath} className="inline-flex items-center gap-2 text-sm font-semibold text-slate-300 transition hover:text-white">
+            <ArrowLeft className="h-4 w-4" /> Back to {roleLabel.toLowerCase()} dashboard
           </Link>
-        </div>
+          <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-300">
+            <BadgeCheck className="h-4 w-4 text-emerald-300" /> {roleLabel} account
+          </span>
+        </header>
 
-        <div className="grid gap-5 lg:grid-cols-3">
-          {plans.map(({ id, name, priceInr, farmerPriceInr, note, features, highlight }) => {
-            const displayPriceInr = role === 'farmer' ? Number(farmerPriceInr ?? 0) : priceInr
-            const isFree = displayPriceInr === 0
-            const isHighlight = Boolean(highlight)
-            const priceValue = isFree ? '₹0' : `₹${priceFormatter.format(displayPriceInr)}`
+        <section className="grid gap-8 border-b border-white/10 py-8 md:grid-cols-[1fr_auto] md:items-end">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.24em] text-emerald-300">Membership & billing</p>
+            <h1 className="mt-3 text-3xl font-bold text-white md:text-4xl">Plans for your work</h1>
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300">Compare access for your account and continue to checkout when you’re ready.</p>
+          </div>
+          <div className="flex items-center gap-3 rounded-lg border border-white/10 bg-white/5 px-4 py-3">
+            <CreditCard className="h-5 w-5 text-emerald-300" />
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">Billing</p>
+              <p className="mt-0.5 text-sm font-semibold text-white">One-time checkout</p>
+            </div>
+          </div>
+        </section>
 
-            return (
-              <section
-                key={id}
-                className={[
-                  'relative flex min-h-[540px] flex-col rounded-[28px] border p-0',
-                  isHighlight
-                    ? 'border-[#b6dac5] bg-[#dfece2] text-slate-900 shadow-[0_20px_40px_rgba(16,185,129,0.10)]'
-                    : 'border-[#43657c] bg-[#f1f0ee] text-slate-900 shadow-[0_18px_28px_rgba(2,6,23,0.12)]',
-                ].join(' ')}
-              >
-                <div className="flex flex-1 flex-col px-6 py-5 md:px-7 md:py-6">
-                  <div className="mb-5 flex min-h-[58px] items-center justify-between gap-3">
-                    <p className={['text-[0.72rem] font-bold uppercase tracking-[0.22em]', isHighlight ? 'text-[#2e4138]' : 'text-slate-500'].join(' ')}>
-                      {name.toUpperCase()}
-                    </p>
-                    {isHighlight && (
-                      <span className="inline-flex items-center rounded-full bg-[#12b98d] px-4 py-2 text-[0.7rem] font-bold uppercase tracking-[0.18em] text-white shadow-md shadow-emerald-600/20">
-                        Best value
-                      </span>
-                    )}
+        <section className="flex flex-wrap items-center justify-between gap-4 border-b border-white/10 py-5" aria-label="Current plan status">
+          <div className="flex items-start gap-3">
+            <div className="mt-0.5 flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-400/10 text-emerald-300">
+              <Sprout className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-white">{isFarmer ? `${includedPlan?.name || 'Farmer access'} included` : 'No paid plan selected'}</p>
+              <p className="mt-1 text-sm text-slate-400">{isFarmer ? 'Farmer platform access is free.' : 'Select a plan below to start a one-time checkout.'}</p>
+            </div>
+          </div>
+          <a href="#available-plans" className="inline-flex items-center rounded-md border border-white/15 px-3 py-2 text-sm font-semibold text-white transition hover:bg-white/10">Compare plans</a>
+        </section>
+
+        <section id="available-plans" className="py-7">
+          <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-bold text-white">Available plans</h2>
+              <p className="mt-1 text-sm text-slate-400">Prices shown for {roleLabel.toLowerCase()} accounts.</p>
+            </div>
+            <p className="text-xs text-slate-400">Recurring billing is not enabled.</p>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-3">
+            {plans.map((plan) => {
+              const priceInr = isFarmer ? Number(plan.farmerPriceInr ?? 0) : Number(plan.priceInr)
+              const isFree = priceInr === 0
+              return (
+                <article key={plan.id} className={`flex min-h-[390px] flex-col rounded-lg border p-5 ${plan.highlight ? 'border-emerald-300/50 bg-emerald-300/10' : 'border-white/10 bg-white/[0.035]'}`}>
+                  <div className="flex min-h-7 items-start justify-between gap-3">
+                    <p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-300">{plan.name}</p>
+                    {plan.highlight && <span className="rounded-sm bg-emerald-300 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-[#0b171c]">Popular</span>}
                   </div>
-
-                  <div className="mt-2 flex items-end gap-2">
-                    <span className={['text-[3.6rem] font-black leading-none tracking-[-0.06em]', isHighlight ? 'text-slate-900' : 'text-slate-900'].join(' ')}>
-                      {priceValue}
-                    </span>
-                    <span className={['mb-2 text-[1.45rem] font-medium leading-none', isHighlight ? 'text-slate-600' : 'text-slate-500'].join(' ')}>/mo</span>
+                  <div className="mt-6">
+                    <p className="text-4xl font-bold text-white">₹{priceFormatter.format(priceInr)}</p>
+                    <p className="mt-1 text-xs text-slate-400">{isFree ? 'Included' : 'One-time purchase'}</p>
                   </div>
-
-                  <p className={['mt-5 text-lg', isHighlight ? 'text-slate-600' : 'text-slate-600'].join(' ')}>
-                    {isFree ? 'Base app access' : note}
-                  </p>
-
-                  <ul className={['mt-7 space-y-5 text-[1.05rem]', isHighlight ? 'text-slate-700' : 'text-slate-700'].join(' ')}>
-                    {features.map((feature) => (
-                      <li key={feature} className="flex items-center gap-3">
-                        <span className={['inline-flex h-4 w-4 items-center justify-center rounded-full', isHighlight ? 'bg-[#0d1f1c]' : 'bg-[#0d1f1c]'].join(' ')}>
-                          <Check className="h-3 w-3 text-white" />
-                        </span>
+                  <p className="mt-4 min-h-10 text-sm leading-5 text-slate-300">{plan.note}</p>
+                  <ul className="mt-5 space-y-3 border-t border-white/10 pt-5 text-sm text-slate-200">
+                    {plan.features.map((feature) => (
+                      <li key={feature} className="flex items-start gap-2.5">
+                        <Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-300" />
                         <span>{feature}</span>
                       </li>
                     ))}
                   </ul>
-
-                  <div className="mt-auto pt-7">
-                    <button
-                      type="button"
-                      className={[
-                        'flex w-full items-center justify-center rounded-full px-5 py-4 text-[1.1rem] font-bold transition hover:translate-y-[-1px]',
-                        isHighlight ? 'bg-[#12b98d] text-white shadow-[0_14px_26px_rgba(18,185,141,0.28)]' : 'bg-[#f4f4f4] text-slate-900 ring-1 ring-slate-200/80',
-                      ].join(' ')}
-                    >
-                      {isFree ? 'Included' : `Pay ₹${priceFormatter.format(displayPriceInr)}`}
-                    </button>
+                  <div className="mt-auto pt-6">
+                    <RazorpayButton plan={{ ...plan, priceInr }} />
                   </div>
-                </div>
-              </section>
-            )
-          })}
-        </div>
-
-        <div className="mt-6 grid gap-5 lg:grid-cols-3">
-          {statCards.map(({ label, value, tone }) => (
-            <div
-              key={label}
-              className={[
-                'flex min-h-[140px] items-center justify-between rounded-[24px] border px-6 py-5',
-                tone === 'mint' ? 'border-[#b8dcc6] bg-[#dfece2] text-slate-900' : 'border-[#d7d3ce] bg-[#f2f1ef] text-slate-900',
-              ].join(' ')}
-            >
-              <div className="text-[0.72rem] font-bold uppercase tracking-[0.22em] text-slate-500">{label}</div>
-              <div className="text-[2.5rem] font-black tracking-[-0.06em] text-slate-900">{value}</div>
-            </div>
-          ))}
-        </div>
-
-        <div className="mt-6 overflow-hidden rounded-[28px] border border-[#d7d3ce] bg-[#eae8e5]">
-          <div className="relative h-[220px] overflow-hidden bg-[radial-gradient(circle_at_20%_28%,rgba(255,255,255,0.7),transparent_18%),radial-gradient(circle_at_60%_40%,rgba(104,200,169,0.28),transparent_18%),linear-gradient(180deg,#dfe7db_0%,#cdd6d7_100%)]">
-            <div className="absolute inset-x-0 bottom-0 top-16 bg-[linear-gradient(120deg,transparent_0%,rgba(255,255,255,0.45)_35%,transparent_100%)]" />
-            <div className="absolute left-8 top-10 h-14 w-14 rounded-full bg-white/30 blur-xl" />
-            <div className="absolute right-16 top-16 h-16 w-16 rounded-full bg-[#b4d5cf]/60 blur-xl" />
-            <div className="absolute inset-x-0 bottom-0 h-28 bg-[linear-gradient(180deg,transparent,rgba(110,137,146,0.18))]" />
-            <div className="absolute left-[12%] top-[28%] h-28 w-28 rotate-[-12deg] rounded-full border border-[#8c8e7c]/30 bg-[#cad7bc]/40" />
-            <div className="absolute left-[28%] top-[18%] h-20 w-20 rotate-[18deg] rounded-full border border-[#8c8e7c]/35 bg-[#d7e7d4]/40" />
-            <div className="absolute right-[18%] top-[20%] h-24 w-24 rounded-full border border-[#8c8e7c]/35 bg-[#c9d9d1]/45" />
-            <div className="absolute left-[58%] bottom-[22%] h-24 w-24 rotate-[18deg] rounded-full border border-[#8c8e7c]/35 bg-[#cae1d8]/40" />
-            <div className="absolute bottom-[24%] left-[10%] h-[2px] w-[72%] rotate-[10deg] border-t border-[#6b7c79]/40" />
-            <div className="absolute bottom-[28%] left-[20%] h-[2px] w-[58%] rotate-[-8deg] border-t border-[#6b7c79]/40" />
-            <div className="absolute bottom-[20%] right-[12%] h-[2px] w-[28%] rotate-[14deg] border-t border-[#6b7c79]/40" />
+                </article>
+              )
+            })}
           </div>
-        </div>
+        </section>
+
+        <footer className="border-t border-white/10 py-5 text-xs leading-5 text-slate-400">
+          Payment confirmation is handled by Razorpay when configured. Paid plan activation is not yet saved to an account record in this prototype.
+        </footer>
       </div>
     </main>
   )
