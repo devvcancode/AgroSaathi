@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Bot, ChevronDown, Leaf, Mic, Send, Sprout, Truck, X } from 'lucide-react'
 import { apiUrl } from '@/lib/api'
 
@@ -8,7 +8,9 @@ export default function SupportDock({ role = 'farmer', locale = 'en', context = 
   const [open, setOpen] = useState(false)
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
+  const [recording, setRecording] = useState(false)
   const [messages, setMessages] = useState([{ role: 'assistant', text: 'AgroSaathi is ready. Ask about crops, orders, mandi prices, or dispatch.' }])
+  const mediaRecorderRef = useRef(null)
 
   const quickPrompts = [
     { label: 'Crop alternative', icon: Sprout, text: 'Which crop can I sow as an alternative for my current field?' },
@@ -47,13 +49,78 @@ export default function SupportDock({ role = 'farmer', locale = 'en', context = 
     }
   }
 
-  function startVoice() {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
-    if (!SpeechRecognition) return setInput('Voice input is not supported in this browser.')
-    const recognition = new SpeechRecognition()
-    recognition.lang = locale === 'hi' ? 'hi-IN' : locale === 'pa' ? 'pa-IN' : 'en-IN'
-    recognition.onresult = (event) => setInput(event.results[0][0].transcript)
-    recognition.start()
+  async function startVoice() {
+    if (recording) {
+      mediaRecorderRef.current?.stop()
+      return
+    }
+    if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+      setMessages((items) => [...items, { role: 'assistant', text: 'Voice recording is not supported in this browser.' }])
+      return
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const recorder = new MediaRecorder(stream)
+      const chunks = []
+      mediaRecorderRef.current = recorder
+      recorder.ondataavailable = (event) => {
+        if (event.data.size) chunks.push(event.data)
+      }
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((track) => track.stop())
+        mediaRecorderRef.current = null
+        setRecording(false)
+        const audioBlob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' })
+        if (!audioBlob.size) return
+        if (audioBlob.size > 8 * 1024 * 1024) {
+          setMessages((items) => [...items, { role: 'assistant', text: 'That recording is too large. Please record a shorter question.' }])
+          return
+        }
+
+        setBusy(true)
+        try {
+          const audio = await new Promise((resolve, reject) => {
+            const reader = new FileReader()
+            reader.onload = () => resolve(reader.result)
+            reader.onerror = () => reject(new Error('Unable to read the voice recording.'))
+            reader.readAsDataURL(audioBlob)
+          })
+          const response = await fetch(apiUrl('/api/assistant/audio'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              audio,
+              mimeType: audioBlob.type || 'audio/webm',
+              audioFormat: audioBlob.type.includes('mp4') ? 'mp4' : 'webm',
+              sourceLanguage: locale,
+              targetLanguage: locale,
+              locale,
+              context: { role, ...context },
+            }),
+          })
+          const data = await response.json().catch(() => ({}))
+          if (!response.ok || !data.reply) throw new Error(data.error || 'Voice support is temporarily unavailable.')
+          setMessages((items) => [
+            ...items,
+            ...(data.transcript ? [{ role: 'user', text: data.transcript }] : []),
+            { role: 'assistant', text: data.reply },
+          ])
+          if (data.audio) {
+            const playback = new Audio(`data:${data.audioMimeType || 'audio/wav'};base64,${data.audio}`)
+            playback.play().catch(() => {})
+          }
+        } catch (error) {
+          setMessages((items) => [...items, { role: 'assistant', text: error.message }])
+        } finally {
+          setBusy(false)
+        }
+      }
+      recorder.start()
+      setRecording(true)
+    } catch (error) {
+      setMessages((items) => [...items, { role: 'assistant', text: error.message || 'Microphone access was denied.' }])
+    }
   }
 
   const applyPrompt = (prompt) => {
@@ -74,7 +141,7 @@ export default function SupportDock({ role = 'farmer', locale = 'en', context = 
           </div>
           <div className="border-t border-white/10 px-4 py-3"><p className="mb-2 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Ask about your farm</p><div className="flex gap-2 overflow-x-auto pb-1">{quickPrompts.map(({ label, icon: Icon, text }) => <button key={label} type="button" onClick={() => applyPrompt(text)} className="agrosaathi-prompt flex shrink-0 items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-white/10"><Icon className="h-3.5 w-3.5 text-emerald-300" />{label}</button>)}</div></div>
           <form onSubmit={sendMessage} className="flex gap-2 border-t border-white/10 p-3">
-            <button type="button" onClick={startVoice} aria-label="Use voice input" title="Use voice input" className="rounded-full border border-white/15 p-2 text-emerald-300 hover:bg-white/10"><Mic className="h-4 w-4" /></button>
+            <button type="button" onClick={startVoice} disabled={busy} aria-label={recording ? 'Stop voice recording' : 'Start voice recording'} title={recording ? 'Stop voice recording' : 'Start voice recording'} className={`rounded-full border border-white/15 p-2 hover:bg-white/10 disabled:opacity-50 ${recording ? 'text-rose-300' : 'text-emerald-300'}`}><Mic className="h-4 w-4" /></button>
             <input value={input} onChange={(event) => setInput(event.target.value)} placeholder="Ask AgroSaathi" className="min-w-0 flex-1 rounded-full border border-white/15 bg-white/10 px-3 text-sm text-white outline-none placeholder:text-slate-400" />
             <button type="submit" disabled={busy} aria-label="Send message" className="rounded-full bg-emerald-400 p-2 text-slate-950 disabled:opacity-50"><Send className="h-4 w-4" /></button>
           </form>

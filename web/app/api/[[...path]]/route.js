@@ -19,9 +19,10 @@ import { buildResidueOperations, generateResiduePlan } from '@/backend/services/
 import { residuePlanSchema } from '@/contracts/api'
 import marketplaceService from '@/backend/services/marketplaceService'
 import translationService from '@/backend/services/translationService'
+import { isBhashiniAsrConfigured, isBhashiniTtsConfigured, recognizeSpeech, synthesizeSpeech } from '@/backend/services/bhashini'
 
 const { getLiveAvailability, findMatchingFarmers, getSeedPriceSnapshot } = marketplaceService
-const { normalizeLanguage, translateTextForFarmer, buildAgenticSearchPlan } = translationService
+const { LANGUAGE_LABELS, normalizeLanguage, translateTextForFarmer, buildAgenticSearchPlan } = translationService
 
 function handleCORS(response) {
   response.headers.set('Access-Control-Allow-Origin', process.env.CORS_ORIGINS || process.env.NEXT_PUBLIC_BASE_URL || '*')
@@ -204,7 +205,7 @@ async function createAssistantReply(db, body) {
     ? `Farmer: ${farm.name}. Location: ${farm.village}, ${farm.district}, ${farm.state}. Crop: ${farm.cropType}. Area: ${farm.areaInAcres} acres. Soil pH: ${farm.soilPh ?? 'unknown'}. Nitrogen: ${farm.nitrogenKgPerHa ?? 'unknown'} kg/ha.`
     : 'No farm profile is available yet.'
   const liveContext = body.context ? `Current dashboard data (may be stale): ${JSON.stringify(body.context)}` : ''
-  const language = body.locale === 'hi' ? 'Hindi' : body.locale === 'pa' ? 'Punjabi' : 'English'
+  const language = LANGUAGE_LABELS[normalizeLanguage(body.locale)] || 'English'
   const systemInstruction = [
     'You are AgroVani, a concise and practical agricultural voice advisor for Indian farmers.',
     `Speak in ${language}. If the farmer speaks another supported Indian language, follow their language.`,
@@ -236,12 +237,58 @@ async function createAssistantReply(db, body) {
   return reply ? ok({ reply }) : ok({ error: 'Assistant returned an empty response' }, 502)
 }
 
-async function createGeminiAudioReply(db, body) {
-  if (!process.env.GEMINI_API_KEY) return ok({ error: 'Gemini voice assistant is not configured' }, 503)
-
+async function createBhashiniAudioReply(db, body) {
   const audioData = typeof body?.audio === 'string' ? body.audio : ''
   if (!audioData) return ok({ error: 'Please record a voice question first.' }, 400)
 
+  const sourceLanguage = normalizeLanguage(body.sourceLanguage || body.locale || 'hi')
+  const targetLanguage = normalizeLanguage(body.targetLanguage || body.locale || sourceLanguage)
+  const transcript = await recognizeSpeech({
+    audioContent: audioData,
+    language: sourceLanguage,
+    audioFormat: body.audioFormat || 'webm',
+    samplingRate: body.samplingRate || 48000,
+  })
+  const assistantResponse = await createAssistantReply(db, {
+    ...body,
+    message: transcript,
+    locale: targetLanguage,
+  })
+  const assistantData = await assistantResponse.json()
+  if (!assistantResponse.ok || !assistantData.reply) return ok(assistantData, assistantResponse.status)
+
+  let speech = null
+  if (isBhashiniTtsConfigured()) {
+    try {
+      speech = await synthesizeSpeech({ text: assistantData.reply, language: targetLanguage })
+    } catch (error) {
+      console.warn('Bhashini speech synthesis unavailable:', error.message)
+    }
+  }
+  return ok({
+    ...assistantData,
+    transcript,
+    sourceLanguage,
+    targetLanguage,
+    mode: 'bhashini',
+    audio: speech?.audioContent || null,
+    audioMimeType: speech?.mimeType || null,
+  })
+}
+
+async function createGeminiAudioReply(db, body) {
+  if (isBhashiniAsrConfigured()) {
+    try {
+      return await createBhashiniAudioReply(db, body)
+    } catch (error) {
+      console.warn('Bhashini voice turn unavailable:', error.message)
+      if (!process.env.GEMINI_API_KEY) return ok({ error: 'Bhashini voice processing failed. Check its ASR endpoint and inference key.' }, 502)
+    }
+  }
+  if (!process.env.GEMINI_API_KEY) return ok({ error: 'Configure Bhashini ASR or GEMINI_API_KEY to enable voice questions.' }, 503)
+
+  const audioData = typeof body?.audio === 'string' ? body.audio : ''
+  if (!audioData) return ok({ error: 'Please record a voice question first.' }, 400)
   const farm = body.farmId ? await db.collection('farms').findOne({ id: body.farmId }) : null
   const farmContext = farm
     ? `Farmer: ${farm.name}. Location: ${farm.village}, ${farm.district}, ${farm.state}. Crop: ${farm.cropType}. Area: ${farm.areaInAcres} acres. Soil pH: ${farm.soilPh ?? 'unknown'}. Nitrogen: ${farm.nitrogenKgPerHa ?? 'unknown'} kg/ha.`
