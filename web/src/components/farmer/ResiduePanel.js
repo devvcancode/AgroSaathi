@@ -315,7 +315,7 @@ export default function ResiduePanel({ farm, residue, onSave }) {
                   className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-400"
                 />
                 <p className="mt-2 text-xs text-slate-400">
-                  We'll auto-calculate stages for {cropType} ({cropDuration.daysToHarvest} days to harvest).
+                  We&apos;ll auto-calculate stages for {cropType} ({cropDuration.daysToHarvest} days to harvest).
                 </p>
               </div>
 
