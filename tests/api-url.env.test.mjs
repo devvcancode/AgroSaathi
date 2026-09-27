@@ -37,3 +37,18 @@ test('apiUrl respects an explicit API base URL override', async () => {
     else process.env.NEXT_PUBLIC_API_BASE_URL = previous
   }
 })
+
+test('apiUrl ignores a localhost override when the app is open on a remote origin', async () => {
+  const apiModule = await loadModule('../web/src/lib/api.js')
+  const previous = process.env.NEXT_PUBLIC_API_BASE_URL
+  process.env.NEXT_PUBLIC_API_BASE_URL = 'http://localhost:3000'
+  globalThis.window = { location: { origin: 'https://codespace-3000.example.dev' } }
+
+  try {
+    assert.equal(apiModule.apiUrl('/api/farms'), 'https://codespace-3000.example.dev/api/farms')
+  } finally {
+    globalThis.window = undefined
+    if (previous === undefined) delete process.env.NEXT_PUBLIC_API_BASE_URL
+    else process.env.NEXT_PUBLIC_API_BASE_URL = previous
+  }
+})
