@@ -1,10 +1,10 @@
 // Syngenta CE Hub API adapter + geocoding.
 
 const CEHUB_BASE = 'https://services.cehub.syngenta-ais.com';
-const CEHUB_APIKEY = process.env.CEHUB_APIKEY || 'b5428df1-abb7-4f52-8a13-ddaed67dcb98';
+const CEHUB_APIKEY = process.env.CEHUB_APIKEY || '';
 
 function headers() {
-  return { ApiKey: CEHUB_APIKEY, Accept: 'application/json' };
+  return { ...(CEHUB_APIKEY ? { ApiKey: CEHUB_APIKEY } : {}), Accept: 'application/json' };
 }
 
 function ymd(d) {
@@ -50,6 +50,14 @@ export async function fetchSprayWindow(latitude, longitude, sprayingType = 'Foli
   const start = new Date();
   const end = new Date();
   end.setDate(end.getDate() + 5);
+  if (!CEHUB_APIKEY) {
+    try {
+      const windows = await fetchOpenMeteoSprayWindow(latitude, longitude);
+      return { ok: windows.length > 0, windows, status: null, source: 'Open-Meteo forecast', fallback: true };
+    } catch (error) {
+      return { ok: false, windows: [], status: null, source: 'Open-Meteo forecast', error: error.message };
+    }
+  }
   const url = `${CEHUB_BASE}/api/AgronomicsDecisionRecommendation/SprayWindowRecommendation?latitude=${latitude}&longitude=${longitude}&sprayingType=${encodeURIComponent(
     sprayingType
   )}&startDate=${ymd(start)}&endDate=${ymd(end)}`;
@@ -77,6 +85,7 @@ export async function fetchSprayWindow(latitude, longitude, sprayingType = 'Foli
 }
 
 export async function fetchHydricStress(latitude, longitude, crop = 'Rice') {
+  if (!CEHUB_APIKEY) return { ok: false, data: null, source: 'not-configured' };
   const start = new Date();
   const end = new Date();
   end.setDate(end.getDate() + 7);

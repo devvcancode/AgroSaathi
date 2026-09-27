@@ -49,6 +49,35 @@ test('translation service uses the configured provider response when available',
   else process.env.TRANSLATION_API_KEY = previousKey
 })
 
+test('translation service uses Groq when the configured translation provider fails', async () => {
+  const previousUrl = process.env.TRANSLATION_API_URL
+  const previousGroqKey = process.env.GROQ_API_KEY
+  const previousGeminiKey = process.env.GEMINI_API_KEY
+  const previousFetch = global.fetch
+  process.env.TRANSLATION_API_URL = 'https://translation.example.test/translate'
+  process.env.GROQ_API_KEY = 'test-groq-key'
+  delete process.env.GEMINI_API_KEY
+  global.fetch = async (url) => {
+    if (url === process.env.TRANSLATION_API_URL) return { ok: false, status: 503, json: async () => ({}) }
+    assert.match(url, /api\.groq\.com/)
+    return { ok: true, json: async () => ({ choices: [{ message: { content: 'आज चावल बेचें' } }] }) }
+  }
+
+  try {
+    const result = await translateTextForFarmer({ text: 'Sell rice today', sourceLanguage: 'en', targetLanguage: 'hi' })
+    assert.equal(result.mode, 'groq')
+    assert.equal(result.translatedText, 'आज चावल बेचें')
+  } finally {
+    global.fetch = previousFetch
+    if (previousUrl === undefined) delete process.env.TRANSLATION_API_URL
+    else process.env.TRANSLATION_API_URL = previousUrl
+    if (previousGroqKey === undefined) delete process.env.GROQ_API_KEY
+    else process.env.GROQ_API_KEY = previousGroqKey
+    if (previousGeminiKey === undefined) delete process.env.GEMINI_API_KEY
+    else process.env.GEMINI_API_KEY = previousGeminiKey
+  }
+})
+
 test('agentic search groups farmer asks into actionable modules and gives a response', () => {
   const plan = buildAgenticSearchPlan('आज mandi rate and residue pickup for rice', { cropType: 'Rice' })
 

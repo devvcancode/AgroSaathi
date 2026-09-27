@@ -37,17 +37,33 @@ async function getTrail(driverId, limit = 200) {
 const server = http.createServer((request, response) => {
   const url = new URL(request.url, 'http://localhost')
   const locationMatch = url.pathname.match(/^\/api\/locations\/([^/]+)$/)
-  response.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': process.env.CORS_ORIGINS || '*' })
+  response.setHeader('Content-Type', 'application/json')
+  response.setHeader('Access-Control-Allow-Origin', process.env.CORS_ORIGINS || '*')
+  response.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS')
+  if (request.method === 'OPTIONS') {
+    response.writeHead(204)
+    response.end()
+    return
+  }
+  if (url.pathname === '/api/locations' && request.method === 'GET') {
+    response.writeHead(200)
+    response.end(JSON.stringify({ locations: [...locations.values()], source: persistenceReady ? 'redis' : 'memory_prototype' }))
+    return
+  }
   if (locationMatch && request.method === 'GET') {
     const driverId = decodeURIComponent(locationMatch[1])
     Promise.all([Promise.resolve(locations.get(driverId) || null), getTrail(driverId, Math.min(500, Number(url.searchParams.get('limit')) || 200))])
-      .then(([location, trail]) => response.end(JSON.stringify({ location, trail })))
+      .then(([location, trail]) => {
+        response.writeHead(200)
+        response.end(JSON.stringify({ location, trail }))
+      })
       .catch(() => {
         response.writeHead(503)
         response.end(JSON.stringify({ error: 'Location history is unavailable' }))
       })
     return
   }
+  response.writeHead(200)
   response.end(JSON.stringify({ status: 'ok', clients: clients.size, locations: locations.size, persistence: persistenceReady ? 'redis' : 'memory' }))
 })
 

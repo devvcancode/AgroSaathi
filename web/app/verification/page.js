@@ -53,7 +53,9 @@ const sources = [
   { label: 'UIDAI (identity services and safeguards)', href: 'https://uidai.gov.in/' },
 ]
 
-export default function VerificationPage() {
+export default async function VerificationPage({ searchParams }) {
+  const params = await searchParams
+  const digilockerStatus = params?.digilocker
   return (
     <main className="min-h-screen bg-[#f3f6f8] px-4 py-6 text-slate-900 md:px-8 md:py-10">
       <div className="mx-auto max-w-5xl">
@@ -67,6 +69,13 @@ export default function VerificationPage() {
         <section className="mt-5 flex items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950" aria-live="polite">
           <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0" />
           <div><p className="font-bold">Verification is not active in this demo</p><p className="mt-1 leading-6">The current sign-in uses demo credentials and this deployment has no authenticated, private document-upload and review workflow. No documents are collected here, and no account should be treated as KYC-verified. Do not send identity or land records by email or chat.</p></div>
+        </section>
+
+        <section className="mt-5 rounded-lg border border-slate-200 bg-white p-5 shadow-sm md:p-6">
+          <h2 className="text-lg font-bold text-[#173f5b]">DigiLocker authorization</h2>
+          <p className="mt-2 text-sm leading-6 text-slate-600">Connect through DigiLocker consent when the application credentials are configured. This prototype only completes the OAuth authorization handshake; it does not retrieve or retain documents and does not mark an account verified.</p>
+          {digilockerStatus && <p role="status" className="mt-3 rounded-md bg-slate-100 px-3 py-2 text-sm text-slate-700">{({ authorized: 'DigiLocker authorization completed. KYC review is still pending.', not_configured: 'DigiLocker is not configured for this deployment.', denied: 'DigiLocker authorization was cancelled.', state_error: 'The DigiLocker authorization could not be validated. Please restart the connection.', error: 'DigiLocker authorization could not be completed.' })[digilockerStatus] || 'DigiLocker status updated.'}</p>}
+          <a href="/api/verification/digilocker/start" className="mt-4 inline-flex items-center rounded-md bg-[#174a6e] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#123d5d]">Connect DigiLocker</a>
         </section>
 
         <div className="mt-6 space-y-4">

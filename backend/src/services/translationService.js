@@ -14,6 +14,8 @@ const LANGUAGE_ALIASES = {
   'hindi-english': 'hi',
 }
 
+const { generateGroqReply } = require('../ai/groq')
+
 const LANGUAGE_LABELS = {
   en: 'English',
   hi: 'Hindi',
@@ -79,13 +81,13 @@ async function translateTextForFarmer({ text, sourceLanguage = 'ta', targetLangu
     sourceLanguage: source,
     targetLanguage: target,
   })
-  if (providerTranslation) {
+  if (providerTranslation?.translatedText) {
     return {
       text: input,
       sourceLanguage: source,
       targetLanguage: target,
-      translatedText: providerTranslation,
-      mode: process.env.TRANSLATION_API_URL ? 'provider' : 'gemini',
+      translatedText: providerTranslation.translatedText,
+      mode: providerTranslation.mode,
       confidence: 0.95,
     }
   }
@@ -116,9 +118,23 @@ async function translateWithConfiguredProvider({ text, sourceLanguage, targetLan
       })
       const data = await response.json().catch(() => ({}))
       const translatedText = data.translatedText || data.translation || data.text
-      if (response.ok && typeof translatedText === 'string' && translatedText.trim()) return translatedText.trim()
+      if (response.ok && typeof translatedText === 'string' && translatedText.trim()) return { translatedText: translatedText.trim(), mode: 'provider' }
     } catch (error) {
       console.error('Configured translation provider unavailable:', error.message)
+    }
+  }
+
+  if (process.env.GROQ_API_KEY) {
+    try {
+      const translatedText = await generateGroqReply({
+        apiKey: process.env.GROQ_API_KEY,
+        model: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
+        systemInstruction: `Translate the agricultural buyer message from ${LANGUAGE_LABELS[sourceLanguage] || sourceLanguage} to ${LANGUAGE_LABELS[targetLanguage] || targetLanguage}. Preserve names, crops, quantities, prices, dates, units, urgency, and negotiation intent. Return only the translation, with no explanation.`,
+        message: text,
+      })
+      return { translatedText, mode: 'groq' }
+    } catch (error) {
+      console.warn('Groq translation unavailable:', error.message)
     }
   }
 
@@ -142,7 +158,7 @@ async function translateWithConfiguredProvider({ text, sourceLanguage, targetLan
     })
     const data = await response.json().catch(() => ({}))
     const translatedText = data.candidates?.[0]?.content?.parts?.map((part) => part.text || '').join('').trim()
-    if (response.ok && translatedText) return translatedText
+    if (response.ok && translatedText) return { translatedText, mode: 'gemini' }
   } catch (error) {
     console.error('Gemini translation unavailable:', error.message)
   }

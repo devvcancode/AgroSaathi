@@ -1,3 +1,4 @@
 {
-  "npm.packageManager": "npm"
+  "npm.packageManager": "npm",
+  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python"
 }

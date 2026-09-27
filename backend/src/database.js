@@ -101,3 +101,10 @@ export function connectToDatabase() {
   }
   return connectToMongo()
 }
+
+export function getDatabaseMode() {
+  const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL
+  if (supabaseDb || (supabaseUrl && (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE))) return 'supabase'
+  if (mongoDb || (process.env.MONGO_URL && process.env.DB_NAME)) return 'mongodb'
+  return 'memory_prototype'
+}

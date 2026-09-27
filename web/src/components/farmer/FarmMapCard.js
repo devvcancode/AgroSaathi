@@ -16,7 +16,7 @@ const LeafletMap = dynamic(() => import('./LeafletMap'), {
 })
 
 export default function FarmMapCard({ lat, lon, mode = 'residue', stressScore = 0, title }) {
-  const { location, connection } = useLiveLocation({ latitude: lat, longitude: lon, enabled: Boolean(lat && lon) })
+  const { location, connection } = useLiveLocation({ id: null, latitude: lat, longitude: lon, enabled: Boolean(lat && lon) })
 
   return (
     <div className="glass-card card-3d">

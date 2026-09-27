@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from 'node:crypto'
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 import { v4 as uuidv4 } from 'uuid'
 import { NextResponse } from 'next/server'
 import { AccessToken } from 'livekit-server-sdk'
@@ -8,7 +8,8 @@ import { computeStressDiagnostic, computeFarmEconomics, CROP_LIST, PRODUCT_CATAL
 import { computeResidue, computeFieldReadiness, DISTRICT_DATA, getDistrictData } from '@/science/residueRecommendation'
 import { calculateIncentivePlan, buildCropCalendar, calculateYieldProjection } from '@/science/agriLoop'
 import { buildGeminiVisionPrompt, parseGeminiResponse, mapSymptomsToRecommendation } from '@/backend/ai/gemini'
-import { connectToDatabase } from '@/backend/database'
+import { generateGroqReply, generateGroqVisionReply, transcribeGroqAudio } from '@/backend/ai/groq'
+import { connectToDatabase, getDatabaseMode } from '@/backend/database'
 import { predictYield } from '@/backend/services/yieldModel'
 import { compareMsp, lookupMandiPrices } from '@/backend/services/mandiService'
 import { buildFarmReportPdf, createWhatsAppText } from '@/backend/services/reportService'
@@ -20,6 +21,7 @@ import { residuePlanSchema } from '@/contracts/api'
 import marketplaceService from '@/backend/services/marketplaceService'
 import translationService from '@/backend/services/translationService'
 import { isBhashiniAsrConfigured, isBhashiniTtsConfigured, recognizeSpeech, synthesizeSpeech } from '@/backend/services/bhashini'
+import { createDigiLockerAuthorizationUrl, exchangeDigiLockerCode, isDigiLockerConfigured } from '@/backend/services/digilocker'
 
 const { getLiveAvailability, findMatchingFarmers, getSeedPriceSnapshot } = marketplaceService
 const { LANGUAGE_LABELS, normalizeLanguage, translateTextForFarmer, buildAgenticSearchPlan } = translationService
@@ -33,7 +35,9 @@ function handleCORS(response) {
 }
 
 function ok(data, status = 200) {
-  return handleCORS(NextResponse.json(data, { status }))
+  const response = handleCORS(NextResponse.json(data, { status }))
+  response.headers.set('X-Persistence-Mode', getDatabaseMode())
+  return response
 }
 
 function pdf(data) {
@@ -150,6 +154,83 @@ const SEED_MACHINERY = [
   { type: 'Happy Seeder', provider: 'Vidarbha Farm Tech', district: 'Nagpur', pricePerAcre: 1300, available: true, lat: 21.15, lon: 79.09 },
 ]
 
+const SEED_LISTINGS = [
+  { id: '00000000-0000-4000-8000-000000000101', sellerId: 'seller-patiala@agrovani.in', sellerName: 'Patiala Seed & Residue Co-op', sellerState: 'Punjab', sellerPlace: 'Patiala', name: 'Paddy straw bales', category: 'Residue', priceInr: 4200, stockUnits: 120, status: 'active', expectedDeliveryDays: 3 },
+  { id: '00000000-0000-4000-8000-000000000102', sellerId: 'seller-ludhiana@agrovani.in', sellerName: 'Ludhiana Farm Collective', sellerState: 'Punjab', sellerPlace: 'Ludhiana', name: 'Wheat straw bundles', category: 'Residue', priceInr: 3900, stockUnits: 90, status: 'active', expectedDeliveryDays: 4 },
+  { id: '00000000-0000-4000-8000-000000000103', sellerId: 'seller-indore@agrovani.in', sellerName: 'Malwa Biomass Network', sellerState: 'Madhya Pradesh', sellerPlace: 'Indore', name: 'Soybean residue loads', category: 'Residue', priceInr: 4600, stockUnits: 75, status: 'active', expectedDeliveryDays: 6 },
+  { id: '00000000-0000-4000-8000-000000000104', sellerId: 'seller-nagpur@agrovani.in', sellerName: 'Vidarbha Crop Circle', sellerState: 'Maharashtra', sellerPlace: 'Nagpur', name: 'Cotton stalk bundles', category: 'Residue', priceInr: 3500, stockUnits: 60, status: 'active', expectedDeliveryDays: 7 },
+].map((listing) => ({ ...listing, listingType: 'residue_offer', createdAt: new Date(), updatedAt: new Date() }))
+
+function buildPrototypeReadFallback(route, searchParams) {
+  const farms = SEED_FARMS
+  const district = searchParams.get('district') || 'Patiala'
+  const cropType = searchParams.get('cropType') || searchParams.get('crop') || 'Rice'
+  const region = searchParams.get('region') || 'Punjab'
+
+  if (route === '/farms') {
+    const farmId = searchParams.get('id')
+    const result = farmId ? farms.find((farm) => farm.id === farmId) : farms
+    return { data: result || { error: 'Farm not found' }, status: result ? 200 : 404 }
+  }
+  if (route === '/buyer/farm-map') {
+    return { data: { country: 'India', farms: farms.map(({ id, district: farmDistrict, state, cropType: crop, latitude, longitude }) => ({ id, district: farmDistrict, state, cropType: crop, latitude, longitude, availability: 'Available for buyer enquiry' })) } }
+  }
+  if (route === '/buyer/sellers') return { data: SEED_LISTINGS }
+  if (route === '/marketplace/listings') {
+    const sellerId = searchParams.get('sellerId')
+    return { data: SEED_LISTINGS.filter((listing) => !sellerId || listing.sellerId === sellerId) }
+  }
+  if (route === '/marketplace/availability') {
+    const mandi = lookupMandiPrices({ commodity: cropType, state: region, market: '' })
+    return { data: {
+      ...getLiveAvailability({ cropType, region, farms }),
+      mandiPricePerQtl: mandi.latestModalPrice || null,
+      mandiSource: mandi.source || null,
+      matchingFarmers: findMatchingFarmers({ cropType, region, farms, mandiPrice: mandi.latestModalPrice || 0 }),
+    } }
+  }
+  if (route === '/marketplace/seed-prices') {
+    return { data: getSeedPriceSnapshot({ product: searchParams.get('product') || '', district: searchParams.get('district') || '', state: searchParams.get('state') || '', listings: [] }) }
+  }
+  if (route === '/marketplace/orders' || route === '/buyer/needs' || route === '/notifications' || route === '/tasks' || route === '/messages' || route === '/bookings') return { data: [] }
+  if (route === '/earnings') return { data: { earnings: [], totalInr: 0 } }
+  if (route === '/dispatch') return { data: { dispatch: [] } }
+  if (route === '/machinery') {
+    const requestedType = searchParams.get('type')
+    return { data: SEED_MACHINERY.filter((item) => (!searchParams.get('district') || item.district === searchParams.get('district')) && (!requestedType || item.type === requestedType)) }
+  }
+  if (route === '/district-metrics') {
+    if (searchParams.get('district')) return { data: { district, ...getDistrictData(district) } }
+    return { data: Object.entries(DISTRICT_DATA).map(([districtName, values]) => ({ district: districtName, ...values })) }
+  }
+  if (route === '/admin/overview') {
+    const districts = Object.entries(DISTRICT_DATA).map(([name, values]) => ({ district: name, ...values, farmers: farms.filter((farm) => farm.district === name || farm.state === values.state).length, coverage: 100 }))
+    return { data: { farmers: farms.length, bookings: 0, diagnostics: 0, districts } }
+  }
+  if (route === '/admin/reviews') {
+    return { data: farms.map((farm) => ({ id: `farm-${farm.id}`, farmId: farm.id, reviewType: 'Farm verification', status: 'open', createdAt: farm.createdAt, farm })) }
+  }
+  if (route === '/residue/profile') return { data: {} }
+  if (route === '/residue/operations') {
+    const farmId = searchParams.get('farmId')
+    const farm = farms.find((item) => item.id === farmId) || null
+    const residue = farm ? computeResidue({ areaInAcres: farm.areaInAcres, district: farm.district, cropType: farm.cropType }) : null
+    return { data: { farm, profile: null, residue, operation: null, buyerNeeds: [], listings: SEED_LISTINGS, orders: [], bookings: [] } }
+  }
+  if (route === '/residue') {
+    const farm = farms.find((item) => item.id === searchParams.get('farmId'))
+    const areaInAcres = Number(searchParams.get('area')) || Number(farm?.areaInAcres) || 5
+    const crop = farm?.cropType || cropType
+    const farmDistrict = farm?.district || district
+    const residue = computeResidue({ areaInAcres, district: farmDistrict, cropType: crop })
+    return { data: {
+      ...residue,
+      ...computeFieldReadiness({ areaInAcres, cropType: crop, residueTons: residue.residueTons, machinery: SEED_MACHINERY.filter((item) => item.district === farmDistrict), bookings: [], activeListings: SEED_LISTINGS.length, activeOrders: 0, activeOrderQuantity: 0 }),
+    } }
+  }
+  return null
+}
+
 async function seedDb(db) {
   const farmsCol = db.collection('farms')
   const farmCount = await farmsCol.countDocuments()
@@ -172,13 +253,7 @@ async function seedDb(db) {
   }
   const listingsCol = db.collection('marketplace_listings')
   if (await listingsCol.countDocuments() === 0) {
-    const now = new Date()
-    await listingsCol.insertMany([
-      { id: '00000000-0000-4000-8000-000000000101', sellerId: 'seller-patiala@agrovani.in', sellerName: 'Patiala Seed & Residue Co-op', sellerState: 'Punjab', sellerPlace: 'Patiala', name: 'Paddy straw bales', category: 'Residue', priceInr: 4200, stockUnits: 120, status: 'active', expectedDeliveryDays: 3, createdAt: now, updatedAt: now },
-      { id: '00000000-0000-4000-8000-000000000102', sellerId: 'seller-ludhiana@agrovani.in', sellerName: 'Ludhiana Farm Collective', sellerState: 'Punjab', sellerPlace: 'Ludhiana', name: 'Wheat straw bundles', category: 'Residue', priceInr: 3900, stockUnits: 90, status: 'active', expectedDeliveryDays: 4, createdAt: now, updatedAt: now },
-      { id: '00000000-0000-4000-8000-000000000103', sellerId: 'seller-indore@agrovani.in', sellerName: 'Malwa Biomass Network', sellerState: 'Madhya Pradesh', sellerPlace: 'Indore', name: 'Soybean residue loads', category: 'Residue', priceInr: 4600, stockUnits: 75, status: 'active', expectedDeliveryDays: 6, createdAt: now, updatedAt: now },
-      { id: '00000000-0000-4000-8000-000000000104', sellerId: 'seller-nagpur@agrovani.in', sellerName: 'Vidarbha Crop Circle', sellerState: 'Maharashtra', sellerPlace: 'Nagpur', name: 'Cotton stalk bundles', category: 'Residue', priceInr: 3500, stockUnits: 60, status: 'active', expectedDeliveryDays: 7, createdAt: now, updatedAt: now },
-    ])
+    await listingsCol.insertMany(SEED_LISTINGS)
   }
   return { seeded: seededFarms, referenceDataReady: true }
 }
@@ -196,10 +271,18 @@ function localAssistantReply(body) {
 }
 
 async function createAssistantReply(db, body) {
-  if (!process.env.GEMINI_API_KEY) return localAssistantReply(body)
-
-  const farm = body.farmId ? await db.collection('farms').findOne({ id: body.farmId }) : null
-  if (body.farmId && !farm) return ok({ error: 'Farm not found' }, 404)
+  let farm = null
+  let farmLookupFailed = false
+  if (body.farmId) {
+    try {
+      farm = await db.collection('farms').findOne({ id: body.farmId })
+    } catch (error) {
+      farmLookupFailed = true
+      console.warn('Assistant farm context unavailable:', error.message)
+    }
+    if (!farm && !farmLookupFailed && (process.env.GROQ_API_KEY || process.env.GEMINI_API_KEY)) return ok({ error: 'Farm not found' }, 404)
+    if (!farm && !process.env.GROQ_API_KEY && !process.env.GEMINI_API_KEY) return localAssistantReply(body)
+  }
 
   const farmContext = farm
     ? `Farmer: ${farm.name}. Location: ${farm.village}, ${farm.district}, ${farm.state}. Crop: ${farm.cropType}. Area: ${farm.areaInAcres} acres. Soil pH: ${farm.soilPh ?? 'unknown'}. Nitrogen: ${farm.nitrogenKgPerHa ?? 'unknown'} kg/ha.`
@@ -214,27 +297,51 @@ async function createAssistantReply(db, body) {
     farmContext,
     liveContext,
   ].join('\n')
-  const model = process.env.GEMINI_MODEL || 'gemini-3.6-flash'
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(process.env.GEMINI_API_KEY)}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      systemInstruction: { parts: [{ text: systemInstruction }] },
-      contents: [{ role: 'user', parts: [{ text: body.message || '' }] }],
-      generationConfig: { temperature: 0.3, maxOutputTokens: 300 },
-    }),
-  })
-
-  const data = await response.json()
-  if (!response.ok) {
-    console.error('Gemini assistant error:', data)
-    if (response.status === 401 || response.status === 403) {
-      return localAssistantReply(body)
-    }
-    return ok({ error: 'Unable to get an assistant response. Please try again.' }, 502)
+  const providers = []
+  if (process.env.GROQ_API_KEY) {
+    providers.push({
+      name: 'groq',
+      generate: () => generateGroqReply({
+        apiKey: process.env.GROQ_API_KEY,
+        model: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
+        systemInstruction,
+        message: body.message,
+      }),
+    })
   }
-  const reply = data.candidates?.[0]?.content?.parts?.map((part) => part.text || '').join('').trim()
-  return reply ? ok({ reply }) : ok({ error: 'Assistant returned an empty response' }, 502)
+  if (process.env.GEMINI_API_KEY) {
+    providers.push({
+      name: 'gemini',
+      generate: async () => {
+        const model = process.env.GEMINI_MODEL || 'gemini-3.6-flash'
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(process.env.GEMINI_API_KEY)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: systemInstruction }] },
+            contents: [{ role: 'user', parts: [{ text: body.message || '' }] }],
+            generationConfig: { temperature: 0.3, maxOutputTokens: 300 },
+          }),
+          signal: AbortSignal.timeout(8000),
+        })
+        const data = await response.json().catch(() => ({}))
+        if (!response.ok) throw new Error(data.error?.message || `Gemini returned HTTP ${response.status}`)
+        const reply = data.candidates?.[0]?.content?.parts?.map((part) => part.text || '').join('').trim()
+        if (!reply) throw new Error('Gemini returned an empty response')
+        return reply
+      },
+    })
+  }
+
+  for (const provider of providers) {
+    try {
+      return ok({ reply: await provider.generate(), source: provider.name })
+    } catch (error) {
+      console.warn(`${provider.name} assistant unavailable:`, error.message)
+    }
+  }
+
+  return localAssistantReply(body)
 }
 
 async function createBhashiniAudioReply(db, body) {
@@ -282,19 +389,40 @@ async function createGeminiAudioReply(db, body) {
       return await createBhashiniAudioReply(db, body)
     } catch (error) {
       console.warn('Bhashini voice turn unavailable:', error.message)
-      if (!process.env.GEMINI_API_KEY) return ok({ error: 'Bhashini voice processing failed. Check its ASR endpoint and inference key.' }, 502)
+      if (!process.env.GEMINI_API_KEY && !process.env.GROQ_API_KEY) return ok({ error: 'Bhashini voice processing failed. Check its ASR endpoint and inference key.' }, 502)
     }
   }
-  if (!process.env.GEMINI_API_KEY) return ok({ error: 'Configure Bhashini ASR or GEMINI_API_KEY to enable voice questions.' }, 503)
-
   const audioData = typeof body?.audio === 'string' ? body.audio : ''
   if (!audioData) return ok({ error: 'Please record a voice question first.' }, 400)
+  const mimeType = typeof body.mimeType === 'string' && body.mimeType.startsWith('audio/') ? body.mimeType : 'audio/webm'
+  const sourceLanguage = normalizeLanguage(body.sourceLanguage || body.locale || 'hi')
+  const targetLanguage = normalizeLanguage(body.targetLanguage || body.locale || sourceLanguage)
+
+  if (process.env.GROQ_API_KEY) {
+    try {
+      const transcript = await transcribeGroqAudio({
+        apiKey: process.env.GROQ_API_KEY,
+        audioBase64: audioData,
+        mimeType,
+        language: sourceLanguage,
+      })
+      const assistantResponse = await createAssistantReply(db, { ...body, message: transcript, locale: targetLanguage })
+      const assistantData = await assistantResponse.json()
+      if (assistantResponse.ok && assistantData.reply) {
+        return ok({ ...assistantData, transcript, sourceLanguage, targetLanguage, mode: 'groq' })
+      }
+      throw new Error(assistantData.error || 'Groq voice response was unavailable')
+    } catch (error) {
+      console.warn('Groq voice turn unavailable:', error.message)
+    }
+  }
+
+  if (!process.env.GEMINI_API_KEY) return ok({ error: 'Configure GROQ_API_KEY, Bhashini ASR, or GEMINI_API_KEY to enable voice questions.' }, 503)
+
   const farm = body.farmId ? await db.collection('farms').findOne({ id: body.farmId }) : null
   const farmContext = farm
     ? `Farmer: ${farm.name}. Location: ${farm.village}, ${farm.district}, ${farm.state}. Crop: ${farm.cropType}. Area: ${farm.areaInAcres} acres. Soil pH: ${farm.soilPh ?? 'unknown'}. Nitrogen: ${farm.nitrogenKgPerHa ?? 'unknown'} kg/ha.`
     : 'No farm profile is available yet.'
-  const sourceLanguage = normalizeLanguage(body.sourceLanguage || body.locale || 'ta')
-  const targetLanguage = normalizeLanguage(body.targetLanguage || body.locale || 'hi')
   const sourceName = { en: 'English', hi: 'Hindi', pa: 'Punjabi', ta: 'Tamil', te: 'Telugu', mr: 'Marathi' }[sourceLanguage] || 'the source language'
   const targetName = { en: 'English', hi: 'Hindi', pa: 'Punjabi', ta: 'Tamil', te: 'Telugu', mr: 'Marathi' }[targetLanguage] || 'the farmer language'
   const language = body.locale === 'hi' ? 'Hindi' : body.locale === 'pa' ? 'Punjabi' : body.locale === 'ta' ? 'Tamil' : body.locale === 'te' ? 'Telugu' : 'English'
@@ -307,7 +435,6 @@ async function createGeminiAudioReply(db, body) {
     farmContext,
     body.context ? `Current dashboard data: ${JSON.stringify(body.context)}` : '',
   ].filter(Boolean).join('\n')
-  const mimeType = typeof body.mimeType === 'string' && body.mimeType.startsWith('audio/') ? body.mimeType : 'audio/webm'
   const base64 = audioData.includes('base64,') ? audioData.split('base64,')[1] : audioData
   const model = process.env.GEMINI_MODEL || 'gemini-3.6-flash'
 
@@ -330,10 +457,6 @@ async function createGeminiAudioReply(db, body) {
 }
 
 async function createGeminiVisionDiagnosis(body) {
-  if (!process.env.GEMINI_API_KEY) {
-    return ok({ error: 'Gemini API is not configured. Add GEMINI_API_KEY to the server environment.' }, 503)
-  }
-
   const imageData = typeof body?.image === 'string' ? body.image : ''
   if (!imageData) {
     return ok({ error: 'Please upload a crop image before running the diagnosis.' }, 400)
@@ -341,35 +464,51 @@ async function createGeminiVisionDiagnosis(body) {
 
   const mimeType = typeof body?.mimeType === 'string' && body.mimeType.startsWith('image/') ? body.mimeType : 'image/jpeg'
   const base64 = imageData.includes('base64,') ? imageData.split('base64,')[1] : imageData
-  const model = process.env.GEMINI_VISION_MODEL || process.env.GEMINI_MODEL || 'gemini-3.6-flash'
+  const cropType = body?.cropType || 'Rice'
+  const prompt = buildGeminiVisionPrompt({ cropType, farmName: body?.farmName || 'Farmer', location: body?.location || '' })
+  let parsed
+  let source = 'local_fallback'
 
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(process.env.GEMINI_API_KEY)}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{
-        role: 'user',
-        parts: [
-          { text: buildGeminiVisionPrompt({ cropType: body?.cropType || 'Rice', farmName: body?.farmName || 'Farmer', location: body?.location || '' }) },
-          { inline_data: { mime_type: mimeType, data: base64 } },
-        ],
-      }],
-      generationConfig: {
-        temperature: 0.2,
-        maxOutputTokens: 500,
-        responseMimeType: 'application/json',
-      },
-    }),
-  })
-
-  const data = await response.json().catch(() => ({}))
-  if (!response.ok) {
-    console.error('Gemini vision error:', data)
-    return ok({ error: 'Gemini crop diagnosis failed. Check the image payload and GEMINI_API_KEY.' }, 502)
+  if (process.env.GROQ_API_KEY) {
+    try {
+      const rawText = await generateGroqVisionReply({
+        apiKey: process.env.GROQ_API_KEY,
+        model: process.env.GROQ_VISION_MODEL || 'meta-llama/llama-4-scout-17b-16e-instruct',
+        prompt,
+        imageBase64: base64,
+        mimeType,
+      })
+      parsed = parseGeminiResponse({ candidates: [{ content: { parts: [{ text: rawText }] } }] })
+      source = 'groq'
+    } catch (error) {
+      console.warn('Groq crop diagnosis unavailable:', error.message)
+    }
   }
 
-  const parsed = parseGeminiResponse(data)
-  const mapped = mapSymptomsToRecommendation({ cropType: body?.cropType || 'Rice', issue: parsed.issue, symptoms: parsed.symptoms || [parsed.issue] })
+  if (!parsed && process.env.GEMINI_API_KEY) {
+    try {
+      const model = process.env.GEMINI_VISION_MODEL || process.env.GEMINI_MODEL || 'gemini-3.6-flash'
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(process.env.GEMINI_API_KEY)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ role: 'user', parts: [{ text: prompt }, { inline_data: { mime_type: mimeType, data: base64 } }] }],
+          generationConfig: { temperature: 0.2, maxOutputTokens: 500, responseMimeType: 'application/json' },
+        }),
+        signal: AbortSignal.timeout(12000),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(data.error?.message || `Gemini returned HTTP ${response.status}`)
+      parsed = parseGeminiResponse(data)
+      source = 'gemini'
+    } catch (error) {
+      console.warn('Gemini crop diagnosis unavailable:', error.message)
+    }
+  }
+
+  if (!parsed) parsed = parseGeminiResponse({})
+
+  const mapped = mapSymptomsToRecommendation({ cropType, issue: parsed.issue, symptoms: parsed.symptoms || [parsed.issue] })
   const matchedProduct = PRODUCT_CATALOG.find((product) => product.name.toLowerCase() === String(parsed.product || mapped.product).toLowerCase())
   const dosageGuidance = matchedProduct
     ? `No dose is inferred from an image alone. Confirm ${matchedProduct.name} is registered for this crop and target, then follow the current India label for formulation, dose, water volume, and safety interval.`
@@ -383,6 +522,7 @@ async function createGeminiVisionDiagnosis(body) {
     product: parsed.product || mapped.product,
     category: parsed.category || mapped.category,
     confidence: Number(parsed.confidence ?? 0.7),
+    source,
     dosageGuidance,
   })
 }
@@ -426,14 +566,69 @@ async function handleRoute(request, { params }) {
   const { searchParams } = new URL(request.url)
 
   try {
+    if (route === '/location/config' && method === 'GET') {
+      return ok({ websocketUrl: process.env.LOCATION_WS_URL || process.env.NEXT_PUBLIC_LOCATION_WS_URL || '' })
+    }
+
+    if (route === '/verification/digilocker/status' && method === 'GET') {
+      return ok({ configured: isDigiLockerConfigured(), status: 'authorization_only' })
+    }
+
+    if (route === '/verification/digilocker/start' && method === 'GET') {
+      if (!isDigiLockerConfigured()) {
+        return NextResponse.redirect(new URL('/verification?digilocker=not_configured', process.env.NEXTAUTH_URL || new URL(request.url).origin))
+      }
+      const state = randomBytes(32).toString('hex')
+      const response = NextResponse.redirect(createDigiLockerAuthorizationUrl(state))
+      response.cookies.set('digilocker_oauth_state', state, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        path: '/api/verification/digilocker',
+        maxAge: 300,
+      })
+      return response
+    }
+
+    if (route === '/verification/digilocker/callback' && method === 'GET') {
+      const redirect = (status) => {
+        const response = NextResponse.redirect(new URL(`/verification?digilocker=${status}`, process.env.NEXTAUTH_URL || new URL(request.url).origin))
+        response.cookies.set('digilocker_oauth_state', '', { path: '/api/verification/digilocker', maxAge: 0 })
+        return response
+      }
+      const stateCookie = request.cookies.get('digilocker_oauth_state')?.value || ''
+      const state = searchParams.get('state') || ''
+      const statesMatch = stateCookie.length === state.length && state.length > 0 && timingSafeEqual(Buffer.from(stateCookie), Buffer.from(state))
+      if (!statesMatch) return redirect('state_error')
+      if (searchParams.get('error') || !searchParams.get('code')) return redirect('denied')
+      try {
+        await exchangeDigiLockerCode(searchParams.get('code'))
+        return redirect('authorized')
+      } catch (error) {
+        console.warn('DigiLocker authorization exchange failed:', error.message)
+        return redirect('error')
+      }
+    }
+
     if (route === '/health' && method === 'GET') {
+      const database = getDatabaseMode()
+      let databaseStatus = 'unavailable'
+      try {
+        const db = await connectToDatabase()
+        await db.collection('farms').countDocuments()
+        databaseStatus = database === 'memory_prototype' ? 'prototype' : 'connected'
+      } catch (error) {
+        console.error('Health check database probe failed:', error.message)
+      }
+      const ready = databaseStatus === 'connected'
       return ok({
-        status: 'ok',
+        status: ready ? 'ok' : 'degraded',
         service: 'agrosaathi-product-web',
         timestamp: new Date().toISOString(),
-        database: process.env.DATABASE_URL ? 'configured' : 'legacy-adapter',
+        database,
+        databaseStatus,
         yieldModel: process.env.YIELD_MODEL_API_URL ? 'configured' : 'optional',
-      })
+      }, process.env.NODE_ENV === 'production' && !ready ? 503 : 200)
     }
 
     if (route === '/livekit/token' && method === 'POST') {
@@ -1201,6 +1396,14 @@ async function handleRoute(request, { params }) {
     return ok({ error: `Route ${route} not found` }, 404)
   } catch (error) {
     console.error('API Error:', error)
+    if (method === 'GET') {
+      const fallback = buildPrototypeReadFallback(route, searchParams)
+      if (fallback) {
+        const response = ok(fallback.data, fallback.status || 200)
+        response.headers.set('X-Data-Source', 'prototype_fallback')
+        return response
+      }
+    }
     return ok({ error: 'Internal server error', detail: String(error?.message || error) }, 500)
   }
 }

@@ -2,8 +2,8 @@ FROM node:20-alpine
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
-COPY services/location/server.js ./server.js
+COPY server.js ./
 ENV NODE_ENV=production
-ENV LOCATION_WS_PORT=8080
-EXPOSE 8080
-CMD ["node", "server.js"]
+ENV LOCATION_WS_PORT=8787
+EXPOSE 8787
+CMD ["npm", "start"]

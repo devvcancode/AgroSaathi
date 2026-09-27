@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from 'react'
 import { useSpring } from 'framer-motion'
-import { MapContainer, TileLayer, Marker, Popup, Polygon, Circle, LayersControl } from 'react-leaflet'
+import { MapContainer, TileLayer, Marker, Popup, Polygon, Circle, LayersControl, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 
@@ -65,6 +65,16 @@ function AnimatedMarker({ position, icon, children }) {
   )
 }
 
+function FollowLiveLocation({ position }) {
+  const map = useMap()
+
+  useEffect(() => {
+    map.panTo(position, { animate: true, duration: 0.5 })
+  }, [map, position])
+
+  return null
+}
+
 export default function LeafletMap({ lat, lon, liveLocation, mode = 'residue', stressScore = 0 }) {
   const center = [lat, lon]
   const liveCenter = liveLocation?.latitude && liveLocation?.longitude
@@ -121,6 +131,7 @@ export default function LeafletMap({ lat, lon, liveLocation, mode = 'residue', s
       {liveLocation?.status === 'active' && <AnimatedMarker position={liveCenter} icon={ICONS.green}>
         <Popup>Live driver location · active</Popup>
       </AnimatedMarker>}
+      {liveLocation?.status === 'active' && <FollowLiveLocation position={liveCenter} />}
 
       {markers.map((m, i) => (
         <Marker key={i} position={m.pos} icon={ICONS[m.icon]}>

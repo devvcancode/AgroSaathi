@@ -22,6 +22,20 @@ services:
     volumes:
       - redis_data:/data
 
+  location:
+    build:
+      context: ./services/location
+    container_name: agrosaathi-location
+    restart: unless-stopped
+    environment:
+      LOCATION_WS_PORT: 8787
+      REDIS_URL: redis://redis:6379
+      CORS_ORIGINS: http://localhost:3000
+    ports:
+      - '8787:8787'
+    depends_on:
+      - redis
+
 volumes:
   postgres_data:
   redis_data:

@@ -1,0 +1,13 @@
+{
+  "name": "@agrosaathi/location-relay",
+  "version": "1.0.0",
+  "private": true,
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "redis": "^4.7.1",
+    "ws": "^8.18.0"
+  }
+}
