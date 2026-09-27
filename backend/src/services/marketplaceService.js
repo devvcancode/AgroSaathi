@@ -44,7 +44,7 @@ function findMatchingFarmers({ cropType, region, farms = [], mandiPrice = 0 } = 
     })
     .map((farm) => {
       const matchScore = 70 + (String(farm.state || '').toLowerCase() === targetRegion ? 15 : 0) + (String(farm.district || '').toLowerCase().includes(targetRegion) ? 10 : 0) + (safeNumber(farm.areaInAcres, 0) > 5 ? 8 : 0)
-      const quotePerTon = Math.max(0, basePrice > 0 ? Math.round(basePrice * 0.92) : 2400)
+      const quotePerTon = basePrice > 0 ? Math.round(basePrice * 0.92) : null
       return {
         id: farm.id,
         name: farm.name || 'Farmer',
@@ -58,6 +58,53 @@ function findMatchingFarmers({ cropType, region, farms = [], mandiPrice = 0 } = 
       }
     })
     .sort((a, b) => b.matchScore - a.matchScore)
+}
+
+function getSeedPriceSnapshot({ listings = [], district, state, product } = {}) {
+  const targetDistrict = String(district || '').trim().toLowerCase()
+  const targetState = String(state || '').trim().toLowerCase()
+  const targetProduct = String(product || '').trim().toLowerCase()
+  if (!targetProduct || (!targetDistrict && !targetState)) {
+    return { observations: [], sampleCount: 0, message: 'Select a product and district or state to compare local offers.' }
+  }
+
+  const observations = listings
+    .filter((listing) => String(listing.status || 'active').toLowerCase() === 'active')
+    .filter((listing) => String(listing.category || '').toLowerCase() === 'seeds')
+    .filter((listing) => String(listing.name || '').toLowerCase().includes(targetProduct))
+    .filter((listing) => !targetDistrict || [listing.sellerPlace, listing.pickupDistrict].some((place) => String(place || '').trim().toLowerCase() === targetDistrict))
+    .filter((listing) => !targetState || String(listing.sellerState || '').trim().toLowerCase() === targetState)
+    .map((listing) => ({
+      id: listing.id,
+      product: listing.name,
+      seller: listing.sellerName || 'Seed seller',
+      district: listing.sellerPlace || listing.pickupDistrict || 'Unknown',
+      state: listing.sellerState || 'Unknown',
+      priceInr: safeNumber(listing.priceInr, 0),
+      updatedAt: listing.updatedAt || listing.createdAt || null,
+    }))
+    .filter((observation) => observation.priceInr > 0)
+    .sort((left, right) => left.priceInr - right.priceInr)
+
+  const prices = observations.map((observation) => observation.priceInr)
+  const middle = Math.floor(prices.length / 2)
+  const median = prices.length
+    ? prices.length % 2 ? prices[middle] : Math.round((prices[middle - 1] + prices[middle]) / 2)
+    : null
+  return {
+    product: product.trim(),
+    district: district || null,
+    state: state || null,
+    source: 'Active AgroSaathi seed listings',
+    unit: 'seller listing unit; package size must be confirmed',
+    sampleCount: observations.length,
+    lowInr: prices[0] ?? null,
+    medianInr: median,
+    highInr: prices.at(-1) ?? null,
+    observations,
+    message: observations.length ? null : 'No matching active seed listings were found in this area.',
+    disclaimer: 'Indicative asking prices from active listings, not verified transaction prices or government data.',
+  }
 }
 
 function calculateDriverAssignment({ distanceKm, loadTons, baseRatePerKm = 18 } = {}) {
@@ -85,5 +132,6 @@ function calculateDriverAssignment({ distanceKm, loadTons, baseRatePerKm = 18 } 
 module.exports = {
   getLiveAvailability,
   findMatchingFarmers,
+  getSeedPriceSnapshot,
   calculateDriverAssignment,
 }

@@ -13,6 +13,9 @@ import SupportDock from '@/components/SupportDock'
 export default function SellerDashboard() {
   const [listings, setListings] = useState([])
   const [orders, setOrders] = useState([])
+  const [notifications, setNotifications] = useState([])
+  const [seedPriceLookup, setSeedPriceLookup] = useState({ product: 'Rice', district: '', state: '' })
+  const [seedPriceSnapshot, setSeedPriceSnapshot] = useState(null)
   const [sellerId, setSellerId] = useState('seller@agrovani.in')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -56,11 +59,16 @@ export default function SellerDashboard() {
     const user = JSON.parse(localStorage.getItem('agrovani_user') || '{}')
     const currentSeller = user.email || 'seller@agrovani.in'
     setSellerId(currentSeller)
-    Promise.all([fetch(apiUrl(`/api/marketplace/listings?sellerId=${encodeURIComponent(currentSeller)}`)), fetch(apiUrl(`/api/marketplace/orders?sellerId=${encodeURIComponent(currentSeller)}`))])
-      .then(async ([listingResponse, orderResponse]) => {
-        if (!listingResponse.ok || !orderResponse.ok) throw new Error('Unable to load seller data')
+    Promise.all([
+      fetch(apiUrl(`/api/marketplace/listings?sellerId=${encodeURIComponent(currentSeller)}`)),
+      fetch(apiUrl(`/api/marketplace/orders?sellerId=${encodeURIComponent(currentSeller)}`)),
+      fetch(apiUrl(`/api/notifications?audience=seller&userId=${encodeURIComponent(currentSeller)}`)),
+    ])
+      .then(async ([listingResponse, orderResponse, notificationResponse]) => {
+        if (!listingResponse.ok || !orderResponse.ok || !notificationResponse.ok) throw new Error('Unable to load seller data')
         setListings(await listingResponse.json())
         setOrders(await orderResponse.json())
+        setNotifications(await notificationResponse.json())
       })
       .catch((loadError) => setError(loadError.message))
       .finally(() => setLoading(false))
@@ -82,6 +90,30 @@ export default function SellerDashboard() {
       .catch((updateError) => setError(updateError.message))
   }
 
+  function markNotificationRead(id) {
+    fetch(apiUrl('/api/notifications'), { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) })
+      .then(async (response) => {
+        const data = await response.json()
+        if (!response.ok) throw new Error(data.error || 'Unable to update notification')
+        setNotifications((items) => items.map((item) => item.id === id ? { ...item, read: true, unread: false } : item))
+      })
+      .catch((updateError) => setError(updateError.message))
+  }
+
+  async function compareSeedPrices(event) {
+    event.preventDefault()
+    setError('')
+    const params = new URLSearchParams(seedPriceLookup)
+    try {
+      const response = await fetch(apiUrl(`/api/marketplace/seed-prices?${params}`))
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Unable to load local seed prices')
+      setSeedPriceSnapshot(data)
+    } catch (lookupError) {
+      setError(lookupError.message)
+    }
+  }
+
   return (
     <main className="page-seller min-h-screen p-4 text-slate-800 md:p-8">
       <div className="mx-auto max-w-6xl">
@@ -90,6 +122,7 @@ export default function SellerDashboard() {
             <ArrowLeft className="h-4 w-4" /> AgroVani Seller Portal
           </Link>
           <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-bold uppercase tracking-[0.2em] text-amber-700">Seller</span>
+          <Link href="/verification" className="text-xs font-semibold text-slate-600 underline underline-offset-4">KYC requirements</Link>
           <LanguageSwitcher />
         </div>
 
@@ -132,6 +165,24 @@ export default function SellerDashboard() {
         </div>
         {loading && <p className="mt-6 text-sm text-slate-600">Loading shared seller data...</p>}
         {error && <p role="alert" className="mt-6 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
+
+        <section className="mt-6 rounded-[24px] border border-amber-200 bg-amber-50/80 p-5">
+          <div className="flex items-center justify-between gap-3"><div><p className="text-[10px] font-bold uppercase tracking-[0.25em] text-amber-800">Demand alerts</p><h2 className="mt-1 text-xl font-bold text-slate-900">Farmer crop updates</h2></div><span className="rounded-md bg-white px-2.5 py-1 text-xs font-semibold text-slate-700">{notifications.filter((item) => item.unread).length} unread</span></div>
+          <div className="mt-4 divide-y divide-amber-200">{notifications.length ? notifications.map((item) => <div key={item.id} className="flex flex-wrap items-center justify-between gap-3 py-3"><div><p className="text-sm font-semibold text-slate-900">{item.title}</p><p className="mt-1 text-sm text-slate-700">{item.message}</p></div>{item.unread && <button type="button" onClick={() => markNotificationRead(item.id)} className="rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700">Mark read</button>}</div>) : <p className="py-3 text-sm text-slate-600">New matching farmer crop plans will appear here.</p>}</div>
+        </section>
+
+        <section className="mt-6 rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
+          <div><p className="text-[10px] font-bold uppercase tracking-[0.25em] text-emerald-800">Local price intelligence</p><h2 className="mt-1 text-xl font-bold text-slate-900">Compare nearby seed offers</h2></div>
+          <form onSubmit={compareSeedPrices} className="mt-4 grid gap-3 sm:grid-cols-3">
+            <label className="text-xs font-semibold text-slate-700">Seed or crop<input required value={seedPriceLookup.product} onChange={(event) => setSeedPriceLookup((current) => ({ ...current, product: event.target.value }))} className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm" placeholder="Rice" /></label>
+            <label className="text-xs font-semibold text-slate-700">District<input value={seedPriceLookup.district} onChange={(event) => setSeedPriceLookup((current) => ({ ...current, district: event.target.value }))} className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm" placeholder="Patiala" /></label>
+            <label className="text-xs font-semibold text-slate-700">State<input value={seedPriceLookup.state} onChange={(event) => setSeedPriceLookup((current) => ({ ...current, state: event.target.value }))} className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm" placeholder="Punjab" /></label>
+            <button type="submit" className="rounded-lg bg-[#006a42] px-4 py-2.5 text-sm font-semibold text-white sm:col-span-3">Compare local asking prices</button>
+          </form>
+          {seedPriceSnapshot && <div className="mt-5">
+            {seedPriceSnapshot.sampleCount ? <><div className="grid gap-3 sm:grid-cols-3"><div className="rounded-lg bg-slate-50 p-3"><p className="text-xs text-slate-500">Lowest ask</p><p className="mt-1 text-lg font-bold text-slate-900">₹{seedPriceSnapshot.lowInr.toLocaleString('en-IN')}</p></div><div className="rounded-lg bg-emerald-50 p-3"><p className="text-xs text-emerald-800">Median ask</p><p className="mt-1 text-lg font-bold text-slate-900">₹{seedPriceSnapshot.medianInr.toLocaleString('en-IN')}</p></div><div className="rounded-lg bg-slate-50 p-3"><p className="text-xs text-slate-500">Highest ask</p><p className="mt-1 text-lg font-bold text-slate-900">₹{seedPriceSnapshot.highInr.toLocaleString('en-IN')}</p></div></div><p className="mt-3 text-xs text-slate-500">{seedPriceSnapshot.sampleCount} active listings · {seedPriceSnapshot.source} · {seedPriceSnapshot.unit}. {seedPriceSnapshot.disclaimer}</p></> : <p className="rounded-lg bg-slate-50 p-3 text-sm text-slate-600">{seedPriceSnapshot.message}</p>}
+          </div>}
+        </section>
 
         <section className="mt-6 rounded-[28px] border border-emerald-200 bg-gradient-to-br from-emerald-50 via-white to-amber-50 p-6 shadow-sm">
           <div className="flex flex-wrap items-end justify-between gap-3">

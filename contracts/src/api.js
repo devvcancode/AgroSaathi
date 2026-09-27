@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
 const finiteNumber = z.coerce.number().finite()
+const isoDate = z.string().date().nullable().optional()
 
 export const farmCreateSchema = z.object({
   ownerId: z.string().trim().min(1).optional(),
@@ -16,7 +17,28 @@ export const farmCreateSchema = z.object({
   soilPh: finiteNumber.min(0).max(14).nullable().optional(),
   nitrogenKgPerHa: finiteNumber.nonnegative().nullable().optional(),
   locale: z.string().trim().min(2).optional(),
+  sowingDate: isoDate,
+  harvestWindowDays: finiteNumber.int().positive().max(500).optional(),
+  estimatedYieldTons: finiteNumber.positive().nullable().optional(),
+  actualYieldTons: finiteNumber.positive().nullable().optional(),
+  saleWindowStartDate: isoDate,
+  saleWindowEndDate: isoDate,
+  shelfLifeDays: finiteNumber.int().positive().max(3650).optional(),
 })
+
+export const farmCropCycleSchema = z.object({
+  id: z.string().trim().min(1),
+  cropType: z.string().trim().min(1).optional(),
+  sowingDate: isoDate,
+  harvestWindowDays: finiteNumber.int().positive().max(500).optional(),
+  estimatedYieldTons: finiteNumber.positive().nullable().optional(),
+  actualYieldTons: finiteNumber.positive().nullable().optional(),
+  saleWindowStartDate: isoDate,
+  saleWindowEndDate: isoDate,
+  shelfLifeDays: finiteNumber.int().positive().max(3650).optional(),
+}).refine((cycle) => (
+  !cycle.saleWindowStartDate || !cycle.saleWindowEndDate || cycle.saleWindowStartDate <= cycle.saleWindowEndDate
+), { message: 'saleWindowEndDate must be on or after saleWindowStartDate', path: ['saleWindowEndDate'] })
 
 export const listingCreateSchema = z.object({
   sellerId: z.string().trim().min(1),

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { predictYield, backtestMetrics } from '../backend/src/services/yieldModel.js'
 import { compareMsp, lookupMandiPrices } from '../backend/src/services/mandiService.js'
 import { buildFarmReportPdf, createWhatsAppText } from '../backend/src/services/reportService.js'
+import { fetchIndiaWeather } from '../backend/src/adapters/cloudNextWeather.js'
 
 test('yield prediction returns range, confidence, risk and non-causal disclaimer', () => {
   const result = predictYield({ crop: 'Rice', areaInAcres: 5, soilPh: 6.4, nitrogenKgPerHa: 95, rainfallMm: 640 })
@@ -35,4 +36,21 @@ test('missing market data is explicit and report outputs are shareable', () => {
   assert.match(text, /AgroVani farm summary/)
   const pdf = buildFarmReportPdf({ crop: 'Rice', yieldRange: '2-2.5 t/acre', assumptions: ['Demo'] })
   assert.equal(new TextDecoder().decode(pdf).slice(0, 8), '%PDF-1.4')
+})
+
+test('weather map does not return fabricated observations without a provider', async () => {
+  const savedUrl = process.env.CLOUD_NEXT_WEATHER_API_URL
+  const savedKey = process.env.CLOUD_NEXT_WEATHER_API_KEY
+  delete process.env.CLOUD_NEXT_WEATHER_API_URL
+  delete process.env.CLOUD_NEXT_WEATHER_API_KEY
+  try {
+    const result = await fetchIndiaWeather()
+    assert.equal(result.sourceStatus, 'unavailable')
+    assert.ok(result.points.every((point) => point.temperatureC === null && point.source === 'not-configured'))
+  } finally {
+    if (savedUrl === undefined) delete process.env.CLOUD_NEXT_WEATHER_API_URL
+    else process.env.CLOUD_NEXT_WEATHER_API_URL = savedUrl
+    if (savedKey === undefined) delete process.env.CLOUD_NEXT_WEATHER_API_KEY
+    else process.env.CLOUD_NEXT_WEATHER_API_KEY = savedKey
+  }
 })

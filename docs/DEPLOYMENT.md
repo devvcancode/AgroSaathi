@@ -7,11 +7,14 @@ Create the Vercel project from the repository root and use `vercel.json`. It ins
 Required environment variables:
 
 - `DATABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` when using the Supabase adapter; keep the service-role key server-only
 - `NEXTAUTH_URL` set to the public Vercel URL
 - `NEXTAUTH_SECRET`
 - `GOOGLE_CLIENT_ID`
 - `GOOGLE_CLIENT_SECRET`
 - `YIELD_MODEL_API_URL` pointing to the Render yield-model service when enabled
+- `CLOUD_NEXT_WEATHER_API_URL` and `CLOUD_NEXT_WEATHER_API_KEY` for live weather observations; unavailable feeds return no readings
+- `RAZORPAY_KEY_ID` and `RAZORPAY_KEY_SECRET` when enabling paid non-farmer plans
 - `CORS_ORIGINS` set to the Vercel origin
 - `NEXT_PUBLIC_BASE_URL` set to the Vercel origin
 - `GEMINI_API_KEY` for live voice, image diagnosis, and model-backed multilingual translation
@@ -86,3 +89,11 @@ npm run db:migrate:deploy
 ```
 
 The existing feature API still supports its legacy data adapter for compatibility. New auth, notifications, buyer needs, and dispatch records have PostgreSQL/Prisma models and can be migrated independently while the legacy collections are retired.
+
+## Crop cycle and verification release gates
+
+The crop-cycle fields and buyer product-type fields are defined in `backend/supabase/schema.sql`. Apply the reviewed SQL schema to the target Supabase/PostgreSQL database before deploying the API changes; `npm run db:migrate:deploy` applies Prisma migrations and does not apply that backend SQL file.
+
+KYC requirements, source portals, and the secure implementation checklist are in [KYC and Production Readiness](./KYC_AND_PRODUCTION_READINESS.md). The current `web` login is a demo flow, and document collection is intentionally disabled. Do not enable uploads or label accounts verified until server-authenticated identity, private object storage, reviewer authorization, audit logging, and retention/deletion controls are implemented and tested.
+
+The weather map uses the configured provider only. Included mandi values are explicitly demo data; a live authorized market-data feed must be integrated and verified before representing prices as official. Seller seed comparisons are active-listing asking prices, not transaction prices.

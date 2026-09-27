@@ -47,6 +47,7 @@ All paths below are relative to the configured API base URL and are currently im
 |---|---|---|---|---|
 | GET | `/farms` | optional `id` | farm object or farm array | 200; 404 missing farm |
 | POST | `/farms` | farm profile: owner, location, crop, area, soil | created farm | 200; 400 validation |
+| PATCH | `/farms` | `{ id, cropType?, sowingDate?, harvestWindowDays?, estimatedYieldTons?, actualYieldTons?, saleWindowStartDate?, saleWindowEndDate?, shelfLifeDays? }` | updated farm crop-cycle record | 200; 400 validation; 404 missing farm |
 | GET | `/machinery` | optional `district`, `type` | machinery array | 200 |
 | GET | `/bookings` | optional `farmId` | booking array | 200 |
 | POST | `/bookings` | `{ farmId, farmerName, district, machineryType, acres, date }` | created booking | 200 |
@@ -63,14 +64,15 @@ All paths below are relative to the configured API base URL and are currently im
 |---|---|---|---|---|
 | GET | `/buyer/farm-map` | none | `{ country, farms[] }` | 200 |
 | GET | `/buyer/needs` | `buyerId` | buyer need array | 200 |
-| POST | `/buyer/needs` | `{ buyerId, cropType, residueType, quantity, useCase, region, urgency, notes }` | created need | 201; 400 validation |
+| POST | `/buyer/needs` | `{ buyerId, productType?, cropType, residueType, quantity, useCase, region, urgency, notes }`; `productType` is harvested crop or crop residue | created need and matching farmer notifications | 201; 400 validation |
 | GET | `/buyer/sellers` | none | active residue listing array | 200 |
 | GET | `/marketplace/listings` | optional `sellerId` | listing array | 200 |
+| GET | `/marketplace/seed-prices` | `product`, optional `district`, `state` | low/median/high active seed listing asks and observations | 200; asking prices only |
 | POST | `/marketplace/listings` | seller/listing, price, stock, optional residue fields | created listing | 201; 400 contract validation |
 | GET | `/marketplace/orders` | optional `sellerId` or `buyerId` | order array | 200 |
 | POST | `/marketplace/orders` | `{ listingId, sellerId, buyerId, farmId, quantity, totalInr }` | created order | 201; 400/404/409 |
 | PATCH | `/marketplace/orders` | `{ id, status }` | updated order | 200; 400/404 |
-| GET | `/notifications` | `audience` | notification array | 200 |
+| GET | `/notifications` | `audience`, optional `farmId`, `userId` | audience/recipient-scoped notification array | 200 |
 | PATCH | `/notifications` | `{ id }` | read notification | 200; 404 |
 | GET | `/messages` | none | message array | 200 |
 | POST | `/messages` | `{ senderId, recipientId, text, sourceLanguage, targetLanguage }` | created message | 201 |
@@ -155,3 +157,4 @@ Advisory snapshots are separately defined in `backend/data/advisory.schema.sql`.
 - Add contract tests for every row in this matrix and integration tests for Supabase RLS policies.
 - Add idempotency and transactional stock decrement for marketplace orders.
 - Add authentication and expiry rules to the location WebSocket protocol.
+- Implement KYC only after replacing demo login with server-verified identity, private document storage, reviewer authorization, and audited status transitions. See [KYC and Production Readiness](./KYC_AND_PRODUCTION_READINESS.md).

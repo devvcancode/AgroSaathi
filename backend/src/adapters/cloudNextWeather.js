@@ -19,16 +19,15 @@ function firstNumber(...values) {
   return value == null ? null : Number(value)
 }
 
-function fallbackWeather(location, index) {
-  const temperatureC = Math.round(22 + ((index * 3.7) % 14))
+function unavailableWeather(location) {
   return {
     ...location,
-    temperatureC,
-    humidityPct: 48 + ((index * 7) % 35),
-    windKph: 8 + ((index * 2) % 14),
-    precipitationMm: index % 3 === 0 ? 2.4 : 0,
-    condition: index % 3 === 0 ? 'Light rain possible' : 'Partly cloudy',
-    source: 'demo-fallback',
+    temperatureC: null,
+    humidityPct: null,
+    windKph: null,
+    precipitationMm: null,
+    condition: 'Weather feed unavailable',
+    source: 'not-configured',
   }
 }
 
@@ -45,11 +44,11 @@ function normalizeWeather(location, payload) {
   }
 }
 
-export async function fetchCloudNextWeather(location, index = 0) {
+export async function fetchCloudNextWeather(location) {
   const baseUrl = process.env.CLOUD_NEXT_WEATHER_API_URL
   const apiKey = process.env.CLOUD_NEXT_WEATHER_API_KEY
   const version = process.env.CLOUD_NEXT_WEATHER_API_VERSION || DEFAULT_VERSION
-  if (!baseUrl || !apiKey) return fallbackWeather(location, index)
+  if (!baseUrl || !apiKey) return unavailableWeather(location)
 
   try {
     const endpoint = new URL(baseUrl)
@@ -69,17 +68,20 @@ export async function fetchCloudNextWeather(location, index = 0) {
     return normalizeWeather(location, await response.json())
   } catch (error) {
     console.warn(`Weather API unavailable for ${location.name}:`, error.message)
-    return fallbackWeather(location, index)
+    return unavailableWeather(location)
   }
 }
 
 export async function fetchIndiaWeather() {
-  const points = await Promise.all(INDIA_WEATHER_LOCATIONS.map((location, index) => fetchCloudNextWeather(location, index)))
+  const points = await Promise.all(INDIA_WEATHER_LOCATIONS.map((location) => fetchCloudNextWeather(location)))
+  const providerConfigured = Boolean(process.env.CLOUD_NEXT_WEATHER_API_URL && process.env.CLOUD_NEXT_WEATHER_API_KEY)
+  const hasObservations = points.some((point) => point.source === 'cloud-next-weather-v3' && point.temperatureC != null)
   return {
     country: 'India',
     bounds: { north: 37.1, south: 6.5, east: 97.5, west: 68.1 },
-    provider: process.env.CLOUD_NEXT_WEATHER_API_URL ? 'Cloud Next Weather' : 'Demo fallback',
+    provider: providerConfigured ? 'Cloud Next Weather' : 'No live provider configured',
     version: process.env.CLOUD_NEXT_WEATHER_API_VERSION || DEFAULT_VERSION,
+    sourceStatus: hasObservations ? 'provider' : 'unavailable',
     points,
   }
 }

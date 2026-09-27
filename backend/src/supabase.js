@@ -3,7 +3,10 @@ import { createClient } from '@supabase/supabase-js'
 const TABLE_COLUMNS = {
   farms: {
     ownerId: 'owner_id', cropType: 'crop_type', areaInAcres: 'area_in_acres', soilPh: 'soil_ph',
-    nitrogenKgPerHa: 'nitrogen_kg_per_ha', createdAt: 'created_at',
+    nitrogenKgPerHa: 'nitrogen_kg_per_ha', sowingDate: 'sowing_date',
+    harvestWindowDays: 'harvest_window_days', estimatedYieldTons: 'estimated_yield_tons',
+    actualYieldTons: 'actual_yield_tons', saleWindowStartDate: 'sale_window_start_date',
+    saleWindowEndDate: 'sale_window_end_date', shelfLifeDays: 'shelf_life_days', createdAt: 'created_at',
   },
   machinery: {
     pricePerAcre: 'price_per_acre',
@@ -33,7 +36,7 @@ const TABLE_COLUMNS = {
     updatedAt: 'updated_at',
   },
   buyer_needs: {
-    buyerId: 'buyer_id', cropType: 'crop_type', residueType: 'residue_type', useCase: 'use_case',
+    buyerId: 'buyer_id', productType: 'product_type', cropType: 'crop_type', residueType: 'residue_type', useCase: 'use_case',
     quantity: 'quantity', region: 'region', urgency: 'urgency', notes: 'notes', createdAt: 'created_at',
   },
   admin_reviews: {
@@ -53,7 +56,7 @@ const TABLE_COLUMNS = {
     driverId: 'driver_id', farmerId: 'farmer_id', buyerId: 'buyer_id', pickupLocation: 'pickup_location', dropLocation: 'drop_location', etaMinutes: 'eta_minutes', createdAt: 'created_at',
   },
   notifications: {
-    listingId: 'listing_id', createdAt: 'created_at',
+    userId: 'user_id', farmId: 'farm_id', listingId: 'listing_id', readAt: 'read_at', createdAt: 'created_at',
   },
   residue_profiles: {
     farmId: 'farm_id', residueType: 'residue_type', qualityGrade: 'quality_grade', quantityQuintals: 'quantity_quintals', moisturePercent: 'moisture_percent', pickupReadyDate: 'pickup_ready_date', updatedAt: 'updated_at',
@@ -154,8 +157,8 @@ function createSupabaseCollection(supabase, table) {
 }
 
 export function getSupabaseServerClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE
   if (!url || !key) return null
   return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } })
 }

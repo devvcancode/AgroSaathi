@@ -11,6 +11,13 @@ create table if not exists public.farms (
   longitude double precision not null,
   soil_ph numeric,
   nitrogen_kg_per_ha numeric,
+  sowing_date date,
+  harvest_window_days integer not null default 120,
+  estimated_yield_tons numeric,
+  actual_yield_tons numeric,
+  sale_window_start_date date,
+  sale_window_end_date date,
+  shelf_life_days integer not null default 14,
   locale text not null default 'en',
   created_at timestamptz not null default now()
 );
@@ -117,6 +124,7 @@ create table if not exists public.admin_reviews (
 create table if not exists public.buyer_needs (
   id uuid primary key default gen_random_uuid(),
   buyer_id text not null,
+  product_type text not null default 'Crop residue',
   crop_type text not null,
   residue_type text not null,
   use_case text not null default 'Biomass processing',
@@ -128,7 +136,16 @@ create table if not exists public.buyer_needs (
   created_at timestamptz not null default now()
 );
 
+alter table public.buyer_needs add column if not exists product_type text not null default 'Crop residue';
+
 alter table public.farms add column if not exists owner_id text;
+alter table public.farms add column if not exists sowing_date date;
+alter table public.farms add column if not exists harvest_window_days integer not null default 120;
+alter table public.farms add column if not exists estimated_yield_tons numeric;
+alter table public.farms add column if not exists actual_yield_tons numeric;
+alter table public.farms add column if not exists sale_window_start_date date;
+alter table public.farms add column if not exists sale_window_end_date date;
+alter table public.farms add column if not exists shelf_life_days integer not null default 14;
 alter table public.marketplace_listings add column if not exists seller_name text;
 alter table public.marketplace_listings add column if not exists seller_state text;
 alter table public.marketplace_listings add column if not exists seller_place text;
@@ -187,13 +204,20 @@ create table if not exists public.dispatch (
 create table if not exists public.notifications (
   id uuid primary key default gen_random_uuid(),
   audience text not null,
+  user_id text,
+  farm_id text,
   type text not null,
   title text not null,
   message text not null,
   listing_id uuid references public.marketplace_listings(id) on delete cascade,
   read boolean not null default false,
+  read_at timestamptz,
   created_at timestamptz not null default now()
 );
+
+alter table public.notifications add column if not exists user_id text;
+alter table public.notifications add column if not exists farm_id text;
+alter table public.notifications add column if not exists read_at timestamptz;
 
 create table if not exists public.residue_profiles (
   id uuid primary key default gen_random_uuid(),

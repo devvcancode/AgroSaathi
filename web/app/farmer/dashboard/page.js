@@ -61,6 +61,8 @@ function StressGauge({ label, value, icon: Icon, unit = '/9' }) {
 export default function App() {
   const [farms, setFarms] = useState([])
   const [farm, setFarm] = useState(null)
+  const [cropCycle, setCropCycle] = useState({ cropType: 'Rice', sowingDate: '', harvestWindowDays: 120, estimatedYieldTons: '', actualYieldTons: '', saleWindowStartDate: '', saleWindowEndDate: '', shelfLifeDays: 14 })
+  const [cropCycleMessage, setCropCycleMessage] = useState('')
   const [tab, setTab] = useState('crop')
   const [stress, setStress] = useState(null)
   const [residue, setResidue] = useState(null)
@@ -375,6 +377,20 @@ export default function App() {
     loadFarms()
   }, [])
 
+  useEffect(() => {
+    if (!farm) return
+    setCropCycle({
+      cropType: farm.cropType || 'Rice',
+      sowingDate: farm.sowingDate?.slice(0, 10) || '',
+      harvestWindowDays: farm.harvestWindowDays || 120,
+      estimatedYieldTons: farm.estimatedYieldTons ?? '',
+      actualYieldTons: farm.actualYieldTons ?? '',
+      saleWindowStartDate: farm.saleWindowStartDate?.slice(0, 10) || '',
+      saleWindowEndDate: farm.saleWindowEndDate?.slice(0, 10) || '',
+      shelfLifeDays: farm.shelfLifeDays || 14,
+    })
+  }, [farm])
+
   const loadData = useCallback((f) => {
     if (!f) return
     setLoading(true)
@@ -442,12 +458,18 @@ export default function App() {
       })
       .catch((error) => console.error('Marketplace loading failed:', error))
 
-    fetch(apiUrl(`/api/notifications?audience=farmer&farmId=${encodeURIComponent(f.id)}`))
-      .then(async (r) => { const data = await r.json(); if (!r.ok || !Array.isArray(data)) throw new Error(data.error || 'Notifications unavailable'); setBuyerNotifications(data) })
-      .catch((error) => console.error('Buyer notification loading failed:', error))
-
-    fetch(apiUrl(`/api/marketplace/availability?cropType=${encodeURIComponent(f.cropType || 'Rice')}&region=${encodeURIComponent(f.state || f.district || 'Punjab')}`))
-      .then(async (r) => { const data = await r.json(); if (!r.ok || !data) return; if (data.mandiPricePerQtl) setPriceLock({ marketPrice: data.mandiPricePerQtl, suggestedLock: Math.round(data.mandiPricePerQtl * 0.96) }) })
+    fetch(apiUrl(`/api/mandi?commodity=${encodeURIComponent(f.cropType || 'Rice')}&state=${encodeURIComponent(f.state || '')}&market=${encodeURIComponent(f.district || '')}`))
+      .then(async (r) => {
+        const data = await r.json()
+        if (!r.ok) throw new Error(data.error || 'Mandi prices unavailable')
+        setPriceLock(data.latestModalPrice == null ? null : {
+          marketPrice: data.latestModalPrice,
+          market: data.latest?.market || f.district,
+          observedAt: data.latest?.observedAt || null,
+          source: data.source?.label || 'Source unavailable',
+          freshness: data.dataFreshness?.label || 'Unknown freshness',
+        })
+      })
       .catch(() => {})
 
     fetch(apiUrl(`/api/stress?farmId=${f.id}`))
@@ -460,6 +482,24 @@ export default function App() {
       .catch((error) => console.error('Stress loading failed:', error))
       .finally(() => setLoading(false))
   }, [])
+
+  useEffect(() => {
+    if (!farm?.id) return undefined
+    let active = true
+    const refreshNotifications = () => fetch(apiUrl(`/api/notifications?audience=farmer&farmId=${encodeURIComponent(farm.id)}`))
+      .then(async (response) => {
+        const data = await response.json()
+        if (!response.ok || !Array.isArray(data)) throw new Error(data.error || 'Notifications unavailable')
+        if (active) setBuyerNotifications(data)
+      })
+      .catch((error) => console.error('Buyer notification refresh failed:', error))
+    refreshNotifications()
+    const intervalId = window.setInterval(refreshNotifications, 30000)
+    return () => {
+      active = false
+      window.clearInterval(intervalId)
+    }
+  }, [farm?.id])
 
   async function placeMarketplaceOrder(listing) {
     if (!listing || !farm) return
@@ -510,6 +550,36 @@ export default function App() {
     if (response.ok) setResidueProfile((current) => ({ ...current, ...data }))
   }
 
+  async function saveCropCycle(event) {
+    event.preventDefault()
+    if (!farm) return
+    setCropCycleMessage('Saving crop cycle...')
+    try {
+      const response = await fetch(apiUrl('/api/farms'), {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: farm.id,
+          cropType: cropCycle.cropType,
+          sowingDate: cropCycle.sowingDate || null,
+          harvestWindowDays: Number(cropCycle.harvestWindowDays),
+          estimatedYieldTons: cropCycle.estimatedYieldTons === '' ? null : Number(cropCycle.estimatedYieldTons),
+          actualYieldTons: cropCycle.actualYieldTons === '' ? null : Number(cropCycle.actualYieldTons),
+          saleWindowStartDate: cropCycle.saleWindowStartDate || null,
+          saleWindowEndDate: cropCycle.saleWindowEndDate || null,
+          shelfLifeDays: Number(cropCycle.shelfLifeDays),
+        }),
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Unable to save crop cycle')
+      setFarm(data)
+      setFarms((items) => items.map((item) => item.id === data.id ? data : item))
+      setCropCycleMessage('Crop cycle saved.')
+    } catch (error) {
+      setCropCycleMessage(error.message || 'Unable to save crop cycle.')
+    }
+  }
+
   useEffect(() => { if (farm) loadData(farm) }, [farm, loadData])
 
   const diag = stress?.diagnostic
@@ -517,14 +587,14 @@ export default function App() {
   const syngentaApi = stress?.syngentaApi
 
   const cropTimeline = useMemo(() => {
-    const fallback = [
-      { label: 'Field prep', date: '2026-06-03', status: 'Soil moisture stable', confidence: 92, stage: 'Preparation' },
-      { label: 'Sowing window', date: '2026-06-15', status: 'Ideal for direct seeding', confidence: 89, stage: 'Sowing' },
-      { label: 'Vegetative growth', date: '2026-07-18', status: 'Nitrogen needs monitoring', confidence: 84, stage: 'Growth' },
-      { label: 'Harvest ready', date: '2026-10-10', status: 'Residue collection can start', confidence: 88, stage: 'Harvest' },
-    ]
-
-    const milestones = agriLoop?.cropCalendar?.milestones?.length ? agriLoop.cropCalendar.milestones : fallback
+    const farmerMilestones = farm?.sowingDate ? [
+      { label: 'Sowing recorded', date: farm.sowingDate, stage: 'Sowing', status: 'Farmer updated' },
+      { label: 'Expected harvest', date: new Date(new Date(`${farm.sowingDate}T00:00:00`).getTime() + Number(farm.harvestWindowDays || 120) * 86400000).toISOString().slice(0, 10), stage: 'Harvest', status: 'Editable estimate' },
+      farm.saleWindowStartDate && { label: 'Selling window opens', date: farm.saleWindowStartDate, stage: 'Selling', status: 'Farmer planned' },
+      farm.saleWindowEndDate && { label: 'Selling window closes', date: farm.saleWindowEndDate, stage: 'Selling', status: `Shelf life: ${farm.shelfLifeDays || 14} days` },
+      { label: 'Estimated shelf-life expiry', date: new Date(new Date(`${farm.sowingDate}T00:00:00`).getTime() + (Number(farm.harvestWindowDays || 120) + Number(farm.shelfLifeDays || 14)) * 86400000).toISOString().slice(0, 10), stage: 'Storage', status: 'Planning estimate' },
+    ].filter(Boolean) : []
+    const milestones = farmerMilestones.length ? farmerMilestones : agriLoop?.cropCalendar?.milestones || []
     const weatherRisk = stress?.diagnostic?.scores ? 'Weather factors stable' : 'Weather risk monitored'
     const residueStatus = residue?.riskLevel ? `Residue risk: ${residue.riskLevel}` : 'Residue readiness high'
 
@@ -535,7 +605,7 @@ export default function App() {
       confidence: item.confidence || [92, 89, 85, 88][index] || 80,
       stage: item.stage || ['Preparation', 'Sowing', 'Growth', 'Harvest'][index] || 'Monitoring',
     }))
-  }, [agriLoop, residue, stress])
+  }, [agriLoop, farm, residue, stress])
 
   const liveUpdates = useMemo(() => [
     { source: 'Farmer field', note: `Field conditions: ${stress?.diagnostic?.scores ? 'stress monitored' : 'stable'}`, tone: 'emerald' },
@@ -640,8 +710,10 @@ export default function App() {
                 <p className="mt-3 flex items-center gap-1 text-sm text-slate-600"><IndianRupee className="h-4 w-4" /> {residue?.totalValueINR?.toLocaleString('en-IN') ?? '—'} potential value</p>
                 {priceLock && (
                   <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
-                    <p className="font-bold">Mandi-linked price lock</p>
-                    <p className="mt-1">Current rate: ₹{priceLock.marketPrice}/qtl · Suggested lock: ₹{priceLock.suggestedLock}/qtl</p>
+                    <p className="font-bold">District mandi observation</p>
+                    <p className="mt-1">₹{priceLock.marketPrice.toLocaleString('en-IN')}/quintal · {priceLock.market}</p>
+                    <p className="mt-1 text-xs">{priceLock.freshness} · {priceLock.source}</p>
+                    <p className="mt-1 text-xs">Indicative observation only; not a guaranteed offer or price lock.</p>
                   </div>
                 )}
                 <Link href="/farmer/yield" className="mt-4 flex w-full items-center justify-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-800 transition hover:-translate-y-0.5 hover:bg-emerald-100"><TrendingUp className="h-4 w-4" /> Check yield percentage</Link>
@@ -838,7 +910,7 @@ export default function App() {
                   <span className="badge-green">{agriLoop?.incentive?.incentivePct ?? '12–22'}% incentive plan</span>
                 </div>
 
-                <div className="mt-6 grid gap-5 lg:grid-cols-[1.15fr_1fr_1fr]">
+                <div className="mt-6 grid gap-5 lg:grid-cols-[1.15fr_1.25fr_1fr]">
                   <div className="rounded-[24px] border border-emerald-100 bg-emerald-50/80 p-5">
                     <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-emerald-700">Incentive engine</p>
                     <p className="mt-4 text-4xl font-bold tracking-tight text-slate-900">₹{agriLoop?.incentive?.totalIncentive?.toLocaleString('en-IN') || '18,400'}</p>
@@ -851,22 +923,22 @@ export default function App() {
                   </div>
 
                   <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
-                    <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-slate-500">Harvest & sowing timeline</p>
-                    <p className="mt-4 text-xl font-bold text-slate-900">{agriLoop?.cropCalendar?.cropType || farm?.cropType || 'Rice'}</p>
-                    <div className="mt-4 space-y-3 text-sm text-slate-600">
-                      {agriLoop?.cropCalendar?.milestones?.slice(0, 4).map((item) => (
-                        <div key={item.label} className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2">
-                          <span>{item.label}</span>
-                          <span className="font-medium text-slate-800">{formatShortDate(item.date)}</span>
-                        </div>
-                      )) || (
-                        <>
-                          <div className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2"><span>Land prep</span><span className="font-medium text-slate-800">Jun 3</span></div>
-                          <div className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2"><span>Sowing</span><span className="font-medium text-slate-800">Jun 15</span></div>
-                          <div className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2"><span>Harvest</span><span className="font-medium text-slate-800">Oct 13</span></div>
-                        </>
-                      )}
+                    <div className="flex items-start justify-between gap-3"><div><p className="text-[10px] font-bold uppercase tracking-[0.25em] text-slate-500">Crop cycle & selling plan</p><p className="mt-2 text-xl font-bold text-slate-900">{farm?.cropType || 'Crop'} timeline</p></div><span className="rounded-md bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-800">Farmer editable</span></div>
+                    <div className="mt-4 space-y-2 text-sm text-slate-600">
+                      {cropTimeline.slice(0, 5).map((item) => <div key={item.label} className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2"><span>{item.label}</span><span className="text-right font-medium text-slate-800">{formatShortDate(item.date)}</span></div>)}
+                      {!cropTimeline.length && <p className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-500">Add your sowing date to create a crop and selling timeline.</p>}
                     </div>
+                    <form onSubmit={saveCropCycle} className="mt-5 grid gap-3 sm:grid-cols-2">
+                      <label className="text-xs font-semibold text-slate-700">Crop planned<select value={cropCycle.cropType} onChange={(event) => setCropCycle((current) => ({ ...current, cropType: event.target.value }))} className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-sm">{['Rice', 'Wheat', 'Soybean', 'Cotton', 'Maize'].map((crop) => <option key={crop}>{crop}</option>)}</select></label>
+                      <label className="text-xs font-semibold text-slate-700">Seed sowing date<input type="date" value={cropCycle.sowingDate} onChange={(event) => setCropCycle((current) => ({ ...current, sowingDate: event.target.value }))} className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-sm" /></label>
+                      <label className="text-xs font-semibold text-slate-700">Maturity estimate (days)<input type="number" min="1" max="500" value={cropCycle.harvestWindowDays} onChange={(event) => setCropCycle((current) => ({ ...current, harvestWindowDays: event.target.value }))} className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-sm" /></label>
+                      <label className="text-xs font-semibold text-slate-700">Estimated yield (tons)<input type="number" min="0.01" step="0.01" value={cropCycle.estimatedYieldTons} onChange={(event) => setCropCycle((current) => ({ ...current, estimatedYieldTons: event.target.value }))} className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-sm" /></label>
+                      <label className="text-xs font-semibold text-slate-700">Actual yield (tons)<input type="number" min="0.01" step="0.01" value={cropCycle.actualYieldTons} onChange={(event) => setCropCycle((current) => ({ ...current, actualYieldTons: event.target.value }))} className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-sm" /></label>
+                      <label className="text-xs font-semibold text-slate-700">Selling window opens<input type="date" value={cropCycle.saleWindowStartDate} onChange={(event) => setCropCycle((current) => ({ ...current, saleWindowStartDate: event.target.value }))} className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-sm" /></label>
+                      <label className="text-xs font-semibold text-slate-700">Selling window closes<input type="date" value={cropCycle.saleWindowEndDate} onChange={(event) => setCropCycle((current) => ({ ...current, saleWindowEndDate: event.target.value }))} className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-sm" /></label>
+                      <label className="text-xs font-semibold text-slate-700 sm:col-span-2">Expected shelf life (days)<input type="number" min="1" max="3650" value={cropCycle.shelfLifeDays} onChange={(event) => setCropCycle((current) => ({ ...current, shelfLifeDays: event.target.value }))} className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-sm sm:max-w-[180px]" /></label>
+                      <div className="flex items-center justify-between gap-3 sm:col-span-2"><p role="status" className="text-xs text-slate-500">{cropCycleMessage || `Expected yield: ${farm?.estimatedYieldTons || 'not set'} tons · shelf life: ${farm?.shelfLifeDays || 14} days`}</p><button type="submit" disabled={!farm} className="shrink-0 rounded-lg bg-[#006a42] px-3 py-2 text-xs font-bold text-white hover:bg-[#005836] disabled:opacity-50">Save plan</button></div>
+                    </form>
                   </div>
 
                   <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
@@ -1110,10 +1182,10 @@ export default function App() {
                 <div key={plan.id} className={`relative rounded-[24px] border p-5 ${plan.highlight ? 'border-emerald-200 bg-emerald-50 ring-2 ring-emerald-100' : 'border-slate-200 bg-white'}`}>
                   {plan.highlight && <span className="absolute right-4 top-4 rounded-full bg-emerald-600 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.2em] text-white">Best value</span>}
                   <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500">{plan.name}</p>
-                  <p className="mt-4 text-3xl font-bold text-slate-900">{plan.priceInr === 0 ? '₹0' : `₹${plan.priceInr.toLocaleString('en-IN')}`}<span className="ml-2 text-sm font-medium text-slate-500">/mo</span></p>
+                  <p className="mt-4 text-3xl font-bold text-slate-900">₹{(plan.farmerPriceInr ?? 0).toLocaleString('en-IN')}<span className="ml-2 text-sm font-medium text-slate-500">/mo</span></p>
                   <p className="mt-2 text-sm text-slate-600">{plan.note}</p>
                   <ul className="mt-5 space-y-2 text-sm text-slate-700">{plan.features.map((feature) => <li key={feature} className="flex items-center gap-3"><span className="h-2 w-2 rounded-full bg-emerald-500" />{feature}</li>)}</ul>
-                  <RazorpayButton plan={plan} />
+                  <RazorpayButton plan={{ ...plan, priceInr: plan.farmerPriceInr ?? 0 }} />
                 </div>
               ))}
             </div>

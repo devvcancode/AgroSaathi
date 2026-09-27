@@ -4,6 +4,8 @@ import { CircleMarker, MapContainer, Popup, TileLayer } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 
 const INDIA_BOUNDS = [[6.5, 68.1], [37.1, 97.5]]
+const mapTileUrl = process.env.NEXT_PUBLIC_MAP_TILE_URL || 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'
+const mapAttribution = process.env.NEXT_PUBLIC_MAP_TILE_ATTRIBUTION || '&copy; OpenStreetMap contributors &copy; CARTO'
 
 function colorForTemperature(value) {
   if (value == null) return '#64748b'
@@ -16,7 +18,7 @@ function colorForTemperature(value) {
 export default function IndiaWeatherMap({ points = [] }) {
   return (
     <MapContainer bounds={INDIA_BOUNDS} maxBounds={INDIA_BOUNDS} maxBoundsViscosity={1} minZoom={4} maxZoom={8} scrollWheelZoom style={{ height: '100%', minHeight: 430, width: '100%' }}>
-      <TileLayer attribution="&copy; OpenStreetMap contributors" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+      <TileLayer attribution={mapAttribution} url={mapTileUrl} />
       {points.map((point) => (
         <CircleMarker
           key={`${point.name}-${point.latitude}`}

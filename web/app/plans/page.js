@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, Check } from 'lucide-react'
 import { plans } from '@/src/lib/data/plans'
@@ -13,6 +14,16 @@ const statCards = [
 ]
 
 export default function PlansPage() {
+  const [role, setRole] = useState('farmer')
+
+  useEffect(() => {
+    try {
+      setRole(JSON.parse(localStorage.getItem('agrovani_user') || '{}').role || 'farmer')
+    } catch {
+      setRole('farmer')
+    }
+  }, [])
+
   return (
     <main className="min-h-screen bg-[#081d2d] px-4 py-4 text-white md:px-6 md:py-6">
       <div className="mx-auto max-w-[1500px]">
@@ -23,10 +34,11 @@ export default function PlansPage() {
         </div>
 
         <div className="grid gap-5 lg:grid-cols-3">
-          {plans.map(({ id, name, priceInr, note, features, highlight, buttonLabel }) => {
-            const isFree = priceInr === 0
+          {plans.map(({ id, name, priceInr, farmerPriceInr, note, features, highlight }) => {
+            const displayPriceInr = role === 'farmer' ? Number(farmerPriceInr ?? 0) : priceInr
+            const isFree = displayPriceInr === 0
             const isHighlight = Boolean(highlight)
-            const priceValue = isFree ? '₹0' : `₹${priceFormatter.format(priceInr)}`
+            const priceValue = isFree ? '₹0' : `₹${priceFormatter.format(displayPriceInr)}`
 
             return (
               <section
@@ -80,7 +92,7 @@ export default function PlansPage() {
                         isHighlight ? 'bg-[#12b98d] text-white shadow-[0_14px_26px_rgba(18,185,141,0.28)]' : 'bg-[#f4f4f4] text-slate-900 ring-1 ring-slate-200/80',
                       ].join(' ')}
                     >
-                      {buttonLabel}
+                      {isFree ? 'Included' : `Pay ₹${priceFormatter.format(displayPriceInr)}`}
                     </button>
                   </div>
                 </div>

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 function loadRazorpay() {
   return new Promise((resolve, reject) => {
@@ -16,10 +16,21 @@ function loadRazorpay() {
 export default function RazorpayButton({ plan }) {
   const [status, setStatus] = useState('')
   const [busy, setBusy] = useState(false)
+  const [userRole, setUserRole] = useState('farmer')
+
+  useEffect(() => {
+    try {
+      setUserRole(JSON.parse(localStorage.getItem('agrovani_user') || '{}').role || 'farmer')
+    } catch {
+      setUserRole('farmer')
+    }
+  }, [])
+
+  const priceInr = userRole === 'farmer' ? Number(plan.farmerPriceInr ?? 0) : plan.priceInr
 
   async function startPayment() {
-    if (plan.priceInr === 0) {
-      setStatus(`${plan.name} is free and ready to use.`)
+    if (priceInr === 0) {
+      setStatus(userRole === 'farmer' ? 'All farmer platform features are free.' : `${plan.name} is free and ready to use.`)
       return
     }
 
@@ -31,7 +42,7 @@ export default function RazorpayButton({ plan }) {
       const orderResponse = await fetch('/api/payments/razorpay/order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ planId: plan.id, userEmail: user?.email || null, userRole: user?.role || null }),
+        body: JSON.stringify({ planId: plan.id, userEmail: user?.email || null, userRole }),
       })
       const order = await orderResponse.json()
       if (!orderResponse.ok) throw new Error(order.error || 'Unable to create Razorpay order')
@@ -69,7 +80,7 @@ export default function RazorpayButton({ plan }) {
   return (
     <div className="mt-6">
       <button type="button" onClick={startPayment} disabled={busy} className={`w-full rounded-full px-4 py-3 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${plan.highlight ? 'bg-emerald-600 text-white shadow-[0_12px_30px_rgba(16,185,129,0.28)] hover:bg-emerald-700' : 'bg-slate-100 text-slate-900 hover:bg-slate-200'}`}>
-        {busy ? 'Opening payment…' : plan.priceInr === 0 ? 'Included' : `Pay ₹${plan.priceInr.toLocaleString('en-IN')}`}
+        {busy ? 'Opening payment…' : priceInr === 0 ? 'Included' : `Pay ₹${priceInr.toLocaleString('en-IN')}`}
       </button>
       {status && <p role="status" className="mt-2 text-xs leading-5 text-slate-600">{status}</p>}
     </div>

@@ -4,6 +4,8 @@ import { CircleMarker, MapContainer, Popup, TileLayer } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 
 const INDIA_BOUNDS = [[6.5, 68.1], [37.1, 97.5]]
+const mapTileUrl = process.env.NEXT_PUBLIC_MAP_TILE_URL || 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'
+const mapAttribution = process.env.NEXT_PUBLIC_MAP_TILE_ATTRIBUTION || '&copy; OpenStreetMap contributors &copy; CARTO'
 
 const cropColors = {
   Rice: '#f59e0b',
@@ -18,7 +20,7 @@ export default function BuyerFarmerMap({ farms = [], cropFilter = 'All' }) {
 
   return (
     <MapContainer bounds={INDIA_BOUNDS} maxBounds={INDIA_BOUNDS} maxBoundsViscosity={1} minZoom={4} maxZoom={8} scrollWheelZoom style={{ height: '100%', minHeight: 500, width: '100%' }}>
-      <TileLayer attribution="&copy; OpenStreetMap contributors" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+      <TileLayer attribution={mapAttribution} url={mapTileUrl} />
       {visibleFarms.map((farm, index) => (
         <CircleMarker key={`${farm.id}-${index}`} center={[farm.latitude, farm.longitude]} radius={11} pathOptions={{ color: '#fff', weight: 2, fillColor: cropColors[farm.cropType] || '#0f766e', fillOpacity: 0.9 }}>
           <Popup>

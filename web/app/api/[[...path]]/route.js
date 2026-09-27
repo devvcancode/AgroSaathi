@@ -14,13 +14,13 @@ import { compareMsp, lookupMandiPrices } from '@/backend/services/mandiService'
 import { buildFarmReportPdf, createWhatsAppText } from '@/backend/services/reportService'
 import { fetchIndiaWeather } from '@/backend/adapters/cloudNextWeather'
 import { plans } from '@/lib/data/plans'
-import { farmCreateSchema, listingCreateSchema, orderCreateSchema, validationError } from '@/contracts/api'
+import { farmCreateSchema, farmCropCycleSchema, listingCreateSchema, orderCreateSchema, validationError } from '@/contracts/api'
 import { buildResidueOperations, generateResiduePlan } from '@/backend/services/residueService'
 import { residuePlanSchema } from '@/contracts/api'
 import marketplaceService from '@/backend/services/marketplaceService'
 import translationService from '@/backend/services/translationService'
 
-const { getLiveAvailability, findMatchingFarmers } = marketplaceService
+const { getLiveAvailability, findMatchingFarmers, getSeedPriceSnapshot } = marketplaceService
 const { normalizeLanguage, translateTextForFarmer, buildAgenticSearchPlan } = translationService
 
 function handleCORS(response) {
@@ -456,10 +456,13 @@ async function handleRoute(request, { params }) {
     }
 
     if (route === '/payments/razorpay/order' && method === 'POST') {
+      const body = await request.json()
+      if (String(body.userRole || '').toLowerCase() === 'farmer') {
+        return ok({ error: 'Farmer platform access is free; no payment is due.' }, 400)
+      }
       if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
         return ok({ error: 'Razorpay is not configured. Add RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET.' }, 503)
       }
-      const body = await request.json()
       const plan = plans.find((item) => item.id === body.planId)
       if (!plan) return ok({ error: 'Unknown pricing plan' }, 400)
       if (plan.priceInr <= 0) return ok({ error: 'This plan does not require payment' }, 400)
@@ -608,11 +611,42 @@ async function handleRoute(request, { params }) {
         cropType: farmInput.cropType || 'Rice', areaInAcres: farmInput.areaInAcres || 1,
         latitude: farmInput.latitude ?? 20.5937, longitude: farmInput.longitude ?? 78.9629,
         soilPh: farmInput.soilPh ?? null, nitrogenKgPerHa: farmInput.nitrogenKgPerHa ?? null,
+        sowingDate: farmInput.sowingDate || null, harvestWindowDays: farmInput.harvestWindowDays || 120,
+        estimatedYieldTons: farmInput.estimatedYieldTons ?? null, actualYieldTons: farmInput.actualYieldTons ?? null,
+        saleWindowStartDate: farmInput.saleWindowStartDate || null, saleWindowEndDate: farmInput.saleWindowEndDate || null,
+        shelfLifeDays: farmInput.shelfLifeDays || 14,
         locale: farmInput.locale || 'en',
         createdAt: new Date(),
       }
       await db.collection('farms').insertOne(farm)
       const { _id, ...clean } = farm
+      return ok(clean)
+    }
+
+    if (route === '/farms' && method === 'PATCH') {
+      const parsedBody = farmCropCycleSchema.safeParse(await request.json())
+      if (!parsedBody.success) return ok({ error: validationError(parsedBody) }, 400)
+      const { id, ...cycle } = parsedBody.data
+      const farm = await db.collection('farms').findOne({ id })
+      if (!farm) return ok({ error: 'Farm not found' }, 404)
+      const previousCropType = farm.cropType
+      const updatedFarm = { ...farm, ...cycle, updatedAt: new Date() }
+      const { _id, ...clean } = updatedFarm
+      await db.collection('farms').updateOne({ id }, { $set: clean })
+      if (cycle.cropType && cycle.cropType !== previousCropType) {
+        const seedOffers = await db.collection('marketplace_listings').find({ status: 'active', category: 'Seeds' }).limit(500).toArray()
+        const sellers = [...new Set(seedOffers
+          .filter((offer) => String(offer.name || '').toLowerCase().includes(cycle.cropType.toLowerCase()))
+          .map((offer) => offer.sellerId)
+          .filter(Boolean))]
+        const alerts = sellers.map((userId) => ({
+          id: uuidv4(), audience: 'seller', userId, farmId: id, type: 'farmer_crop_update',
+          title: 'Local farmer updated a crop plan',
+          message: `${clean.district || 'A nearby district'} farmer is planning ${cycle.cropType}. Review your matching seed offers.`,
+          read: false, createdAt: new Date(),
+        }))
+        if (alerts.length) await db.collection('notifications').insertMany(alerts)
+      }
       return ok(clean)
     }
 
@@ -658,9 +692,11 @@ async function handleRoute(request, { params }) {
       if (!body.buyerId || !body.cropType || !body.residueType || Number(body.quantity) <= 0) {
         return ok({ error: 'buyerId, cropType, residueType and a positive quantity are required' }, 400)
       }
+      const productType = body.productType === 'Harvested crop' ? 'Harvested crop' : 'Crop residue'
       const need = {
         id: uuidv4(),
         buyerId: body.buyerId,
+        productType,
         cropType: String(body.cropType).trim(),
         residueType: String(body.residueType).trim(),
         quantity: Number(body.quantity),
@@ -672,13 +708,15 @@ async function handleRoute(request, { params }) {
         createdAt: new Date(),
       }
       await db.collection('buyer_needs').insertOne(need)
-      const matchingFarms = await db.collection('farms').find({ cropType: String(body.cropType).trim() }).limit(25).toArray()
+      const candidates = await db.collection('farms').find({ cropType: String(body.cropType).trim() }).limit(250).toArray()
+      const requestedRegion = String(body.region || '').trim().toLowerCase()
+      const matchingFarms = candidates.filter((farm) => !requestedRegion || `${farm.district || ''} ${farm.state || ''}`.toLowerCase().includes(requestedRegion)).slice(0, 25)
       const farmerAlerts = matchingFarms.map((farm) => ({
         id: uuidv4(),
         audience: 'farmer',
         type: 'buyer_demand',
         title: 'Buyer demand match',
-        message: `${body.buyerId || 'A buyer'} needs ${Number(body.quantity)} tons of ${body.residueType} for ${body.cropType} in ${body.region || 'your region'}.`,
+        message: `${body.buyerId || 'A buyer'} wants ${Number(body.quantity)} tons of ${body.residueType} (${productType}) for ${body.useCase || 'business use'} in ${body.region || 'your region'}.`,
         farmId: farm.id,
         read: false,
         createdAt: new Date(),
@@ -702,6 +740,16 @@ async function handleRoute(request, { params }) {
         mandiSource: mandi.source || null,
         matchingFarmers: matches,
       })
+    }
+
+    if (route === '/marketplace/seed-prices' && method === 'GET') {
+      const snapshot = getSeedPriceSnapshot({
+        product: searchParams.get('product') || '',
+        district: searchParams.get('district') || '',
+        state: searchParams.get('state') || '',
+        listings: await db.collection('marketplace_listings').find({ category: 'Seeds', status: 'active' }).limit(1000).toArray(),
+      })
+      return ok(snapshot)
     }
 
     if (route === '/buyer/sellers' && method === 'GET') {
@@ -752,9 +800,9 @@ async function handleRoute(request, { params }) {
       })
       const calendar = buildCropCalendar({
         cropType,
-        sowingDate: searchParams.get('sowingDate') || '2026-06-15',
+        sowingDate: farm?.sowingDate || searchParams.get('sowingDate') || new Date().toISOString().slice(0, 10),
         weatherDelayDays: Number(searchParams.get('weatherDelayDays') || 0),
-        harvestWindowDays: Number(searchParams.get('harvestWindowDays') || (cropType === 'Rice' ? 120 : 110)),
+        harvestWindowDays: Number(farm?.harvestWindowDays || searchParams.get('harvestWindowDays') || (cropType === 'Rice' ? 120 : 110)),
       })
       const yieldProjection = calculateYieldProjection({
         areaInAcres: area,
@@ -765,7 +813,7 @@ async function handleRoute(request, { params }) {
       })
 
       return ok({
-        farm: farm ? { id: farm.id, name: farm.name, cropType, district, areaInAcres: area } : null,
+        farm: farm ? { id: farm.id, name: farm.name, cropType, district, areaInAcres: area, sowingDate: farm.sowingDate || null, harvestWindowDays: farm.harvestWindowDays || null, estimatedYieldTons: farm.estimatedYieldTons ?? null, actualYieldTons: farm.actualYieldTons ?? null, saleWindowStartDate: farm.saleWindowStartDate || null, saleWindowEndDate: farm.saleWindowEndDate || null, shelfLifeDays: farm.shelfLifeDays || null } : null,
         residue,
         cropEconomics,
         incentive,

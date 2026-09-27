@@ -94,6 +94,7 @@ export default function App() {
           <Link href="/" className="flex items-center gap-2 text-sm font-semibold text-slate-700 hover:text-slate-900">
             <ArrowLeft className="h-4 w-4" /> AgroVani
           </Link>
+          <Link href="/verification" className="text-xs font-semibold text-slate-600 underline underline-offset-4">Verification requirements</Link>
           <LanguageSwitcher />
           <div className="flex items-center gap-2">
             {[1, 2, 3].map((s) => (
